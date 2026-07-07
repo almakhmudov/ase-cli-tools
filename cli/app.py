@@ -46,6 +46,19 @@ def _main(ctx: typer.Context):
 # --------------------------------------------------------------------------- #
 _CALCULATORS = list(registry.CALCULATORS)   # e.g. ["uma"], grows with the registry
 
+_TRUE = {"true", "t", "1", "yes", "y", "on"}
+_FALSE = {"false", "f", "0", "no", "n", "off"}
+
+
+def _parse_bool(value: str, flag: str) -> bool:
+    """Parse a True/False option value, erroring on anything else."""
+    v = value.strip().lower()
+    if v in _TRUE:
+        return True
+    if v in _FALSE:
+        return False
+    raise typer.BadParameter(f"{flag} expects True or False (got {value!r}).")
+
 
 def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
     if cfg.calculator not in registry.CALCULATORS:
@@ -53,21 +66,32 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
                                  f"choose from {_CALCULATORS}.")
     if bool(cfg.structure) == bool(cfg.restart):
         raise typer.BadParameter("provide exactly one of --structure or --restart.")
-    if not cfg.checkpoint:
-        raise typer.BadParameter("a calculator --checkpoint is required.")
 
     calc_spec = registry.CALCULATORS[cfg.calculator]
+    try:
+        _, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc))
+
+    # A checkpoint is required only for components that take one.
+    if "CHECKPOINT" in comp["params"] and not cfg.checkpoint:
+        raise typer.BadParameter("a calculator --checkpoint is required.")
+
     tasks = calc_spec.get("tasks")
     if tasks and cfg.task_name not in tasks:
         raise typer.BadParameter(f"unknown task {cfg.task_name!r} for "
                                  f"{cfg.calculator!r}; choose from {list(tasks)}.")
-    # Charge/multiplicity only mean something for the charge/spin task (omol).
-    cs_task = calc_spec.get("charge_spin_task")
-    if (cs_task and cfg.task_name != cs_task
+
+    # Warn when charge/multiplicity are set but the chosen calculator/task/
+    # variant does not use them.
+    if (not registry.uses_charge_spin(cfg.calculator, cfg.task_name, cfg.variant)
             and (cfg.charge != 0 or cfg.multiplicity != 1)):
-        typer.secho(f"Note: --charge/--multiplicity apply only to the {cs_task!r} "
-                    f"task; ignoring them for task {cfg.task_name!r}.",
+        typer.secho("Note: --charge/--multiplicity are only used by UMA's 'omol' "
+                    "task and MACE-POLAR; ignoring them here.",
                     fg=typer.colors.YELLOW)
+    if cfg.external_field and "EXTERNAL_FIELD" not in comp["params"]:
+        typer.secho("Note: --external-field applies only to MACE-POLAR; "
+                    "ignoring it here.", fg=typer.colors.YELLOW)
 
     text = generate.generate_md_script(cfg, script_name=output)
     if to_stdout:
@@ -86,16 +110,29 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
 _MD_JOBS = [name for name, spec in registry.JOBS.items()
             if spec.get("category") == "md"]
 _UMA_TASKS = list(registry.CALCULATORS["uma"].get("tasks", {}))
+_MACE_VARIANTS = list(registry.CALCULATORS["mace"].get("variants", {}))
 
 
 @md_app.command("run")
 def md_run(
     job: str = typer.Option("nvt", "--job", "-j", help=f"MD job/ensemble: {_MD_JOBS}."),
-    checkpoint: str = typer.Option(None, "--checkpoint", "-c", help="Calculator checkpoint (.pt)."),
+    checkpoint: str = typer.Option(None, "--checkpoint", "-c",
+                                   help="Calculator model/checkpoint file."),
     calculator: str = typer.Option("uma", "--calculator", help=f"MLIP backend: {_CALCULATORS}."),
+    variant: Optional[str] = typer.Option(None, "--variant",
+                                          help=f"MACE variant: {_MACE_VARIANTS} "
+                                               "(default: mace_mp)."),
     task: str = typer.Option("omol", "--task", "-t",
                              help=f"UMA task/property head: {_UMA_TASKS}. Only "
                                   "'omol' uses --charge and --multiplicity."),
+    dtype: str = typer.Option("float64", "--dtype",
+                              help="MACE default_dtype: float32 | float64."),
+    dispersion: str = typer.Option("False", "--dispersion",
+                                   help="MACE-MP only: add D3 dispersion "
+                                        "(True | False)."),
+    external_field: Optional[str] = typer.Option(None, "--external-field",
+                                                 help="MACE-POLAR only: uniform "
+                                                      "field 'Ex Ey Ez'."),
     structure: Optional[str] = typer.Option(None, "--structure", "-s",
                                             help="Starting structure or trajectory."),
     restart: Optional[str] = typer.Option(None, "--restart", "-r",
@@ -129,7 +166,10 @@ def md_run(
     if job not in _MD_JOBS:
         raise typer.BadParameter(f"unknown job {job!r}; choose from {_MD_JOBS}.")
     cfg = NVTConfig(
-        checkpoint=checkpoint, calculator=calculator, job=job, task_name=task,
+        checkpoint=checkpoint, calculator=calculator, variant=variant,
+        job=job, task_name=task,
+        dtype=dtype, dispersion=_parse_bool(dispersion, "--dispersion"),
+        external_field=external_field,
         structure=structure, restart=restart,
         cell=cell, pbc=pbc, charge=charge, multiplicity=multiplicity,
         temperature=temperature, timestep=timestep, nsteps=nsteps,
@@ -217,11 +257,28 @@ def run_wizard() -> None:
     calc_choices = [questionary.Choice(spec["label"], value=name)
                     for name, spec in registry.CALCULATORS.items()]
     calculator = _ask(questionary.select("Calculator:", choices=calc_choices))
-    checkpoint = _ask(questionary.path(f"Path to the {calculator} checkpoint (.pt):"))
 
-    # Task / property head (from the registry). Charge & spin are only asked
-    # for the calculator's designated charge/spin task (UMA: 'omol').
+    # A calculator may be a family (MACE): pick a variant, then work against
+    # that variant's component spec. Otherwise the calculator is its own spec.
     calc_spec = registry.CALCULATORS[calculator]
+    variants = calc_spec.get("variants")
+    variant = None
+    if variants:
+        var_choices = [questionary.Choice(f"{v['label']} - {v['desc']}", value=name)
+                       for name, v in variants.items()]
+        variant = _ask(questionary.select(
+            f"{calc_spec['label']} variant:", choices=var_choices,
+            default=calc_spec.get("default_variant")))
+    _, comp = registry.resolve_variant(calculator, variant)
+
+    # Model file, only for components that take one.
+    if "CHECKPOINT" in comp["params"]:
+        checkpoint = _ask(questionary.path(
+            f"Path to the {variant or calculator} model/checkpoint file:"))
+    else:
+        checkpoint = None
+
+    # Task / property head (UMA). Charge & spin depend on the task/variant.
     tasks = calc_spec.get("tasks")
     cs_task = calc_spec.get("charge_spin_task")
     if tasks:
@@ -232,6 +289,20 @@ def run_wizard() -> None:
                                        choices=task_choices, default=default))
     else:
         task = "omol"
+
+    # Floating-point precision, only for components that expose it (MACE).
+    if "DTYPE" in comp["params"]:
+        dtype = _ask(questionary.select("Model precision (default_dtype):",
+                                        choices=["float64", "float32"]))
+    else:
+        dtype = "float64"
+
+    # D3 dispersion, only for MACE-MP.
+    if "DISPERSION" in comp["params"]:
+        dispersion = _ask(questionary.confirm(
+            "Add D3 dispersion correction?", default=False))
+    else:
+        dispersion = False
 
     start_kind = _ask(questionary.select(
         "Start from:",
@@ -245,9 +316,14 @@ def run_wizard() -> None:
 
     cell = _ask(questionary.text("Cell 'a b c' (blank = use the file's cell):",
                                  default="")) or None
-    if cs_task and task == cs_task:
+    external_field = None
+    if registry.uses_charge_spin(calculator, task, variant):
         charge = int(_ask(questionary.text("Charge:", default="0")))
         multiplicity = int(_ask(questionary.text("Spin multiplicity (2S+1):", default="1")))
+        if "EXTERNAL_FIELD" in comp["params"]:
+            ef = _ask(questionary.text(
+                "External field 'Ex Ey Ez' (blank = none):", default=""))
+            external_field = ef.strip() or None
     else:
         charge, multiplicity = 0, 1
     temperature = float(_ask(questionary.text("Temperature (K):", default="298.15")))
@@ -282,7 +358,9 @@ def run_wizard() -> None:
     output = _ask(questionary.text("Script filename:", default=default_name))
 
     cfg = NVTConfig(
-        checkpoint=checkpoint, calculator=calculator, job=job, task_name=task,
+        checkpoint=checkpoint, calculator=calculator, variant=variant,
+        job=job, task_name=task,
+        dtype=dtype, dispersion=dispersion, external_field=external_field,
         structure=structure, restart=restart,
         cell=cell, charge=charge, multiplicity=multiplicity,
         temperature=temperature, timestep=timestep, nsteps=nsteps,

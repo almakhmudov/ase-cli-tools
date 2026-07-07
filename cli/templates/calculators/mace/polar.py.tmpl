@@ -1,0 +1,16 @@
+
+# --- calculator: MACE-POLAR -------------------------------------------------
+from mace.calculators import mace_polar
+
+# MACE-POLAR uses the system's total charge and spin, and an optional uniform
+# external electric field (omitted here when EXTERNAL_FIELD is None).
+atoms.info["charge"] = CHARGE
+atoms.info["spin"] = MULTIPLICITY
+if EXTERNAL_FIELD is not None:
+    atoms.info["external_field"] = EXTERNAL_FIELD
+
+base_calc = mace_polar(
+    model=CHECKPOINT,
+    device=device,
+    default_dtype=DTYPE,
+)

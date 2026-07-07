@@ -30,9 +30,13 @@ class NVTConfig:
 
     # registry component selection
     calculator: str = "uma"              # key in registry.CALCULATORS
+    variant: Optional[str] = None        # calculator variant, e.g. "mace_mp"
     job: str = "nvt"                     # key in registry.JOBS
 
-    task_name: str = "omol"
+    task_name: str = "omol"          # UMA task head (unused by other calculators)
+    dtype: str = "float64"           # MACE default_dtype (unused by other calculators)
+    dispersion: bool = False         # MACE-MP: D3 dispersion correction
+    external_field: Optional[str] = None  # MACE-POLAR: "Ex Ey Ez" (optional)
     device: str = "auto"
 
     cell: Optional[str] = None           # "a b c" | "a b c al be ga" | 9 values

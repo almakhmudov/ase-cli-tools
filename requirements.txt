@@ -14,6 +14,11 @@ scipy>=1.17
 fairchem-core==2.21.0
 torch==2.8.0
 
+# MACE calculators (--calculator mace). Install the MACE suite from source; the
+# MACE-POLAR variant also needs graph_electrostatics. See the README.
+#   git clone https://github.com/ACEsuit/mace.git && cd mace && pip install .
+#   pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git
+
 # PLUMED Python interface (needed only for biased runs via --plumed).
 # Prefer conda-forge (py-plumed); the pip package requires a working PLUMED
 # library/kernel to be present on the system.

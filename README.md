@@ -46,6 +46,17 @@ For a CPU-only machine, replace the CUDA PyTorch wheel with the CPU build:
 pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
 ```
 
+### MACE backend (optional)
+
+The MACE calculators (`--calculator mace`) need the MACE suite. Install it from
+source; the MACE-POLAR variant additionally needs `graph_electrostatics`:
+
+```bash
+git clone https://github.com/ACEsuit/mace.git
+cd mace && git checkout main && pip install .
+pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git   # MACE-POLAR only
+```
+
 ## Usage
 
 ### Interactive (arrow keys)
@@ -81,6 +92,15 @@ ase-cli-tools md run --job nvt -c uma.pt -s crystal.cif --cell "10 10 10" \
 ase-cli-tools md run --job nvt -c uma.pt -s mixture.xyz --cell "20 20 20" \
     -T 498.15 -n 10000 --tdamp 50 --tchain 5 --tloop 2
 
+# MACE instead of UMA: pick a variant with --variant (default mace_mp)
+ase-cli-tools md run --job nvt --calculator mace --variant mace_mp -c mace.model \
+    -s mixture.xyz --cell "20 20 20" --dtype float32 --dispersion True -T 298.15 -n 10000
+
+# MACE-POLAR: uses charge/spin and an optional external field
+ase-cli-tools md run --job nvt --calculator mace --variant mace_polar -c polar.model \
+    -s mixture.xyz --cell "20 20 20" --charge 0 --multiplicity 1 \
+    --external-field "0 0 0.01" -T 298.15 -n 10000
+
 # wrap post-processing
 ase-cli-tools postprocess wrap equil.traj
 
@@ -100,6 +120,15 @@ ignored for the other tasks. The Nose-Hoover thermostat is tunable via
 `--tdamp` (coupling time in fs; omit for the auto value of `100*timestep`, at
 least 20 fs), `--tchain` (chain length) and `--tloop` (inner loops).
 
+`--calculator` chooses the backend (`uma`, `mace`), with `-c`/`--checkpoint`
+pointing at that backend's model file. For MACE, `--variant` selects the family
+member: `mace_mp` (materials, the default; `--dispersion True` adds a D3
+correction), `mace_off` (organic molecules) and `mace_polar` (uses
+`--charge`/`--multiplicity` and an optional `--external-field "Ex Ey Ez"`).
+`--task` applies to UMA only, and `--dtype` (`float32`/`float64`) to MACE. Each
+backend or variant is a small template plus one registry entry, so biasing, the
+thermostat and the output options work the same across all of them.
+
 Command layout:
 
 ```
@@ -118,7 +147,7 @@ applies uniformly to any ensemble as they are added.
 
 Calculators:
 
-- [ ] MACE
+- [x] MACE
 - [ ] GRACE
 - [ ] ORCA
 - [ ] CP2K

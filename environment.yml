@@ -42,3 +42,8 @@ dependencies:
       - fairchem-core==2.21.0
       # Pinned for reproducibility; see the CUDA/CPU note above.
       - torch==2.8.0
+      # MACE calculators (--calculator mace) are installed from source, not via
+      # pip here; the MACE-POLAR variant also needs graph_electrostatics. See
+      # the README:
+      #   git clone https://github.com/ACEsuit/mace.git && cd mace && pip install .
+      #   pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git

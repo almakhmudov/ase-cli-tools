@@ -38,8 +38,72 @@ CALCULATORS = {
         # for every other task they are neither prompted nor written.
         "charge_spin_task": "omol",
     },
-    # Future: "mace": {...}
+    "mace": {
+        "label": "MACE",
+        # MACE is a family: the user first picks "mace", then one of these
+        # variants. Each variant is its own skeleton (a different loader
+        # function) with its own parameter set. A variant that sets
+        # "uses_charge_spin" additionally consumes CHARGE/MULTIPLICITY.
+        "variants": {
+            "mace_mp": {
+                "label": "MACE-MP",
+                "desc": "materials foundation model; optional D3 dispersion",
+                "template": "calculators/mace/mp.py.tmpl",
+                "params": ["CHECKPOINT", "DTYPE", "DISPERSION"],
+            },
+            "mace_off": {
+                "label": "MACE-OFF",
+                "desc": "organic-molecule foundation model",
+                "template": "calculators/mace/off.py.tmpl",
+                "params": ["CHECKPOINT", "DTYPE"],
+            },
+            "mace_polar": {
+                "label": "MACE-POLAR",
+                "desc": "polarisable; uses charge, spin & optional external field",
+                "template": "calculators/mace/polar.py.tmpl",
+                "params": ["CHECKPOINT", "DTYPE", "CHARGE", "MULTIPLICITY",
+                           "EXTERNAL_FIELD"],
+                "uses_charge_spin": True,
+            },
+        },
+        "default_variant": "mace_mp",
+    },
 }
+
+
+# --------------------------------------------------------------------------- #
+# helpers for calculators that expose variants (e.g. MACE) or charge/spin
+# --------------------------------------------------------------------------- #
+def resolve_variant(calculator: str, variant: "str | None" = None):
+    """Return ``(variant_name, component_spec)`` for a calculator.
+
+    Calculators without a ``variants`` dict return ``(None, calc_spec)`` so the
+    caller can treat variant-less and variant-bearing calculators uniformly.
+    """
+    calc = CALCULATORS[calculator]
+    variants = calc.get("variants")
+    if not variants:
+        return None, calc
+    name = variant or calc.get("default_variant") or next(iter(variants))
+    if name not in variants:
+        raise KeyError(f"unknown variant {name!r} for calculator "
+                       f"{calculator!r}; available: {sorted(variants)}")
+    return name, variants[name]
+
+
+def uses_charge_spin(calculator: str, task_name: "str | None" = None,
+                     variant: "str | None" = None) -> bool:
+    """Whether this calculator/task/variant combination reads charge & spin.
+
+    True for UMA's designated ``charge_spin_task`` (omol) and for any variant
+    flagged ``uses_charge_spin`` (MACE-POLAR).
+    """
+    calc = CALCULATORS[calculator]
+    _, comp = resolve_variant(calculator, variant)
+    if comp.get("uses_charge_spin"):
+        return True
+    cs_task = calc.get("charge_spin_task")
+    return cs_task is not None and task_name == cs_task
 
 # --- jobs (ensembles / drivers) -------------------------------------------- #
 JOBS = {

@@ -43,6 +43,13 @@ def _parse_cell(value: Optional[str]):
     return [float(x) for x in value.replace(",", " ").split()]
 
 
+def _parse_vec(value: Optional[str]):
+    """Parse a vector like '0 0 0' into a list of floats (or None if blank)."""
+    if not value:
+        return None
+    return [float(x) for x in value.replace(",", " ").split()]
+
+
 def _read_plumed_lines(path: str) -> List[str]:
     """Read a PLUMED input, stripping comments and blank lines."""
     lines = []
@@ -75,6 +82,9 @@ def _param_values(cfg: NVTConfig, traj_path: str, wrapped_path: str) -> Dict[str
         "MULTIPLICITY": str(cfg.multiplicity),
         "CHECKPOINT": repr(cfg.checkpoint),
         "TASK_NAME": repr(cfg.task_name),
+        "DTYPE": repr(cfg.dtype),
+        "DISPERSION": str(cfg.dispersion),
+        "EXTERNAL_FIELD": repr(_parse_vec(cfg.external_field)),
         "TEMPERATURE": str(cfg.temperature),
         "TIMESTEP": str(cfg.timestep),
         "NSTEPS": str(cfg.nsteps),
@@ -134,28 +144,33 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     traj_path, wrapped_path, fmt = _traj_paths(cfg)
     values = _param_values(cfg, traj_path, wrapped_path)
 
+    # Resolve the calculator variant (MACE) to its component skeleton; for a
+    # variant-less calculator (UMA) this returns the calculator spec itself.
+    variant_name, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
+
     # Validate the calculator task, if the calculator declares a task set.
     tasks = calc.get("tasks")
     if tasks and cfg.task_name not in tasks:
         raise KeyError(f"unknown task {cfg.task_name!r} for calculator "
                        f"{cfg.calculator!r}; available: {sorted(tasks)}")
 
-    # The charge/spin params (and the lines that set them) apply only to the
-    # calculator's designated charge/spin task (UMA: 'omol').
+    # UMA sets charge/spin via a template placeholder that depends on the task
+    # ('omol'). Variants that use charge/spin (MACE-POLAR) bake those lines into
+    # their own skeleton and list the params directly, so no injection is needed.
     cs_task = calc.get("charge_spin_task")
-    use_charge_spin = cs_task is not None and cfg.task_name == cs_task
+    task_charge_spin = cs_task is not None and cfg.task_name == cs_task
     charge_spin_block = (
         f"\n# The {cs_task!r} task uses the system's total charge and spin "
         f"multiplicity.\n"
         'atoms.info["charge"] = CHARGE\n'
         'atoms.info["spin"] = MULTIPLICITY\n'
-        if use_charge_spin else ""
+        if task_charge_spin else ""
     )
 
     # Collect the parameter names contributed by each selected component.
     keys = list(registry.SHARED_PARAMS)
-    keys += calc["params"]
-    if use_charge_spin:
+    keys += comp["params"]
+    if task_charge_spin:
         keys += ["CHARGE", "MULTIPLICITY"]
     keys += job["params"]
     if cfg.wrap:
@@ -166,7 +181,10 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     plumed_lines = _read_plumed_lines(cfg.plumed) if biased else None
     params_block = _render_params(keys, values, plumed_lines)
 
-    title = f"{job['label']} with {calc['label']} ({cfg.task_name})"
+    calc_label = comp.get("label", calc["label"])
+    title = f"{job['label']} with {calc_label}"
+    if tasks:                       # only UMA-style calculators carry a task
+        title += f" ({cfg.task_name})"
     if biased:
         title += " + PLUMED"
 
@@ -174,7 +192,7 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     parts = [
         _header(title, script_name),
         Template(_load("preamble.py.tmpl")).substitute(PARAMS=params_block),
-        Template(_load(calc["template"])).safe_substitute(
+        Template(_load(comp["template"])).safe_substitute(
             CHARGE_SPIN=charge_spin_block),
         _load(registry.FEATURES["plumed"]["attach_template"]) if biased
         else _load("attach/plain.py.tmpl"),

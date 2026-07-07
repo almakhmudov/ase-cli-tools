@@ -1,0 +1,12 @@
+
+# --- calculator: MACE -------------------------------------------------------
+# Loads a MACE model file (e.g. a foundation model such as MACE-MP/MACE-OFF, or
+# your own trained .model). For a named foundation model instead of a file, use
+# mace.calculators.mace_mp(model="medium", ...) or mace_off(...) here.
+from mace.calculators import MACECalculator
+
+base_calc = MACECalculator(
+    model_paths=CHECKPOINT,
+    device=device,
+    default_dtype=DTYPE,
+)
