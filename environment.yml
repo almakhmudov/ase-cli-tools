@@ -12,11 +12,6 @@
 #   The pip `torch==2.8.0` wheel below pulls the CUDA 12 build, which is what
 #   you want on GPU nodes. For a CPU-only machine install the CPU wheel instead,
 #   e.g.  pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-#
-# NOTE on the UMA checkpoint:
-#   The UMA model weights are NOT included here and are NOT redistributed by
-#   this repository. Obtain them from the FairChem / Meta "facebook/UMA"
-#   release (subject to their licence/terms) and pass the path via --checkpoint.
 
 name: ase-cli-tools
 

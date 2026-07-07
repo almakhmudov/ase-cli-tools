@@ -46,13 +46,6 @@ For a CPU-only machine, replace the CUDA PyTorch wheel with the CPU build:
 pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
 ```
 
-### Model weights
-
-Calculator checkpoints are **not** included and are **not** redistributed here.
-For UMA, obtain the checkpoint from the FairChem / Meta `facebook/UMA` release
-(subject to their licence and access terms) and pass its path with
-`--checkpoint`.
-
 ## Usage
 
 ### Interactive (arrow keys)
@@ -63,9 +56,11 @@ Just run the command with no arguments and follow the prompts:
 ase-cli-tools
 ```
 
-You pick the job category, the ensemble, whether to bias it, and the calculator
-from menus, then type the remaining parameters. The tool writes the script and
-offers to run it.
+You pick the job category, the ensemble, whether to bias it, the calculator and
+its task (property head) from menus, then type the remaining parameters. Charge
+and spin are only asked for the molecular `omol` task, and the Nose-Hoover
+thermostat parameters are behind an optional step so you can leave them at their
+defaults. The tool writes the script and offers to run it.
 
 ### Flag-driven (scriptable)
 
@@ -78,6 +73,14 @@ ase-cli-tools md run --job nvt -c uma.pt -s mixture.xyz --cell "20 20 20" \
 ase-cli-tools md run --job nvt -p examples/plumed.dat -c uma.pt \
     -s mixture.xyz --cell "20 20 20" -T 498.15 -n 500000
 
+# a non-molecular UMA task (no charge/spin): choose the property head with --task
+ase-cli-tools md run --job nvt -c uma.pt -s crystal.cif --cell "10 10 10" \
+    --task omat -T 300 -n 20000
+
+# custom Nose-Hoover thermostat (omitted values fall back to the defaults)
+ase-cli-tools md run --job nvt -c uma.pt -s mixture.xyz --cell "20 20 20" \
+    -T 498.15 -n 10000 --tdamp 50 --tchain 5 --tloop 2
+
 # wrap post-processing
 ase-cli-tools postprocess wrap equil.traj
 
@@ -89,13 +92,21 @@ ase-cli-tools md run --job nvt -c uma.pt -s in.xyz --run
 Every job writes a `.py` file by default (`-o` to name it), `--stdout` prints it
 instead, and `--run` executes the freshly written script.
 
+`--task` selects the UMA property head: `oc20` (catalysis), `oc22` (oxide
+catalysis, 1p2 only), `oc25` ((electro)catalysis, 1p2 only), `omat` (inorganic
+materials), `omol` (molecules & polymers, the default), `odac` (MOFs) and `omc`
+(molecular crystals). Only `omol` uses `--charge`/`--multiplicity`; they are
+ignored for the other tasks. The Nose-Hoover thermostat is tunable via
+`--tdamp` (coupling time in fs; omit for the auto value of `100*timestep`, at
+least 20 fs), `--tchain` (chain length) and `--tloop` (inner loops).
+
 Command layout:
 
 ```
 ase-cli-tools
 ├── md
 │   └── run          -> generate an MD script; --job selects the ensemble
-│                       (nvt, ...) and --plumed turns on biasing
+│                       (nvt, ...), --task the UMA head, --plumed biasing
 └── postprocess
     └── wrap         -> generate a trajectory-wrapping script
 ```

@@ -111,6 +111,12 @@ def md_run(
     temperature: float = typer.Option(298.15, "--temperature", "-T"),
     timestep: float = typer.Option(0.5, "--timestep", "-dt", help="fs."),
     nsteps: int = typer.Option(10000, "--nsteps", "-n"),
+    tdamp: Optional[float] = typer.Option(None, "--tdamp",
+                                          help="Nose-Hoover coupling time in fs. "
+                                               "Omit = auto (100*timestep, min 20 fs)."),
+    tchain: int = typer.Option(3, "--tchain", help="Nose-Hoover chain length."),
+    tloop: int = typer.Option(1, "--tloop",
+                              help="Nose-Hoover inner integration loops."),
     traj_interval: int = typer.Option(10, help="Record every N steps."),
     traj_format: str = typer.Option("traj", help="traj | xyz."),
     wrap: bool = typer.Option(False, help="Also wrap the trajectory at the end."),
@@ -127,6 +133,7 @@ def md_run(
         structure=structure, restart=restart,
         cell=cell, pbc=pbc, charge=charge, multiplicity=multiplicity,
         temperature=temperature, timestep=timestep, nsteps=nsteps,
+        tdamp=tdamp, tchain=tchain, tloop=tloop,
         traj_interval=traj_interval, traj_format=traj_format, wrap=wrap,
         plumed=plumed, prev_steps=prev_steps,
     )
@@ -246,6 +253,21 @@ def run_wizard() -> None:
     temperature = float(_ask(questionary.text("Temperature (K):", default="298.15")))
     timestep = float(_ask(questionary.text("Timestep (fs):", default="0.5")))
     nsteps = int(_ask(questionary.text("Number of steps:", default="10000")))
+
+    # Nose-Hoover thermostat: keep the defaults unless the user opts in. Each
+    # prompt accepts a blank to fall back to the default shown in brackets.
+    tdamp, tchain, tloop = None, 3, 1
+    if _ask(questionary.confirm(
+            "Adjust Nose-Hoover thermostat parameters?", default=False)):
+        td = _ask(questionary.text(
+            "Coupling time tdamp (fs, blank = auto 100*timestep, min 20):",
+            default=""))
+        tdamp = float(td) if td.strip() else None
+        tc = _ask(questionary.text("Chain length tchain (blank = 3):", default=""))
+        tchain = int(tc) if tc.strip() else 3
+        tl = _ask(questionary.text("Inner loops tloop (blank = 1):", default=""))
+        tloop = int(tl) if tl.strip() else 1
+
     traj_format = _ask(questionary.select("Trajectory format:", choices=["traj", "xyz"]))
     wrap = _ask(questionary.confirm("Also wrap the trajectory at the end?", default=False))
 
@@ -264,6 +286,7 @@ def run_wizard() -> None:
         structure=structure, restart=restart,
         cell=cell, charge=charge, multiplicity=multiplicity,
         temperature=temperature, timestep=timestep, nsteps=nsteps,
+        tdamp=tdamp, tchain=tchain, tloop=tloop,
         traj_format=traj_format, wrap=wrap, plumed=plumed, prev_steps=prev_steps,
     )
     text = generate.generate_md_script(cfg, script_name=output)
