@@ -169,8 +169,10 @@ def build_parser():
     g_mod.add_argument("--checkpoint", "-c", required=True,
                        help="Path to the downloaded UMA checkpoint (.pt).")
     g_mod.add_argument("--task-name", default="omol",
-                       choices=["omol", "omat", "omc", "oc20", "odac"],
-                       help="UMA task head. 'omol' uses charge & multiplicity.")
+                       choices=["oc20", "oc22", "oc25", "omat", "omol",
+                                "odac", "omc"],
+                       help="UMA task head. 'omol' uses charge & multiplicity. "
+                            "'oc22'/'oc25' require a UMA 1p2 checkpoint.")
     g_mod.add_argument("--device", default="auto",
                        choices=["auto", "cuda", "cpu"],
                        help="Compute device. 'auto' picks CUDA if available.")

@@ -56,6 +56,19 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
     if not cfg.checkpoint:
         raise typer.BadParameter("a calculator --checkpoint is required.")
 
+    calc_spec = registry.CALCULATORS[cfg.calculator]
+    tasks = calc_spec.get("tasks")
+    if tasks and cfg.task_name not in tasks:
+        raise typer.BadParameter(f"unknown task {cfg.task_name!r} for "
+                                 f"{cfg.calculator!r}; choose from {list(tasks)}.")
+    # Charge/multiplicity only mean something for the charge/spin task (omol).
+    cs_task = calc_spec.get("charge_spin_task")
+    if (cs_task and cfg.task_name != cs_task
+            and (cfg.charge != 0 or cfg.multiplicity != 1)):
+        typer.secho(f"Note: --charge/--multiplicity apply only to the {cs_task!r} "
+                    f"task; ignoring them for task {cfg.task_name!r}.",
+                    fg=typer.colors.YELLOW)
+
     text = generate.generate_md_script(cfg, script_name=output)
     if to_stdout:
         typer.echo(text)
@@ -72,6 +85,7 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
 # --------------------------------------------------------------------------- #
 _MD_JOBS = [name for name, spec in registry.JOBS.items()
             if spec.get("category") == "md"]
+_UMA_TASKS = list(registry.CALCULATORS["uma"].get("tasks", {}))
 
 
 @md_app.command("run")
@@ -79,6 +93,9 @@ def md_run(
     job: str = typer.Option("nvt", "--job", "-j", help=f"MD job/ensemble: {_MD_JOBS}."),
     checkpoint: str = typer.Option(None, "--checkpoint", "-c", help="Calculator checkpoint (.pt)."),
     calculator: str = typer.Option("uma", "--calculator", help=f"MLIP backend: {_CALCULATORS}."),
+    task: str = typer.Option("omol", "--task", "-t",
+                             help=f"UMA task/property head: {_UMA_TASKS}. Only "
+                                  "'omol' uses --charge and --multiplicity."),
     structure: Optional[str] = typer.Option(None, "--structure", "-s",
                                             help="Starting structure or trajectory."),
     restart: Optional[str] = typer.Option(None, "--restart", "-r",
@@ -106,7 +123,7 @@ def md_run(
     if job not in _MD_JOBS:
         raise typer.BadParameter(f"unknown job {job!r}; choose from {_MD_JOBS}.")
     cfg = NVTConfig(
-        checkpoint=checkpoint, calculator=calculator, job=job,
+        checkpoint=checkpoint, calculator=calculator, job=job, task_name=task,
         structure=structure, restart=restart,
         cell=cell, pbc=pbc, charge=charge, multiplicity=multiplicity,
         temperature=temperature, timestep=timestep, nsteps=nsteps,
@@ -195,6 +212,20 @@ def run_wizard() -> None:
     calculator = _ask(questionary.select("Calculator:", choices=calc_choices))
     checkpoint = _ask(questionary.path(f"Path to the {calculator} checkpoint (.pt):"))
 
+    # Task / property head (from the registry). Charge & spin are only asked
+    # for the calculator's designated charge/spin task (UMA: 'omol').
+    calc_spec = registry.CALCULATORS[calculator]
+    tasks = calc_spec.get("tasks")
+    cs_task = calc_spec.get("charge_spin_task")
+    if tasks:
+        task_choices = [questionary.Choice(f"{name} - {desc}", value=name)
+                        for name, desc in tasks.items()]
+        default = cs_task if cs_task in tasks else next(iter(tasks))
+        task = _ask(questionary.select("Task (property head):",
+                                       choices=task_choices, default=default))
+    else:
+        task = "omol"
+
     start_kind = _ask(questionary.select(
         "Start from:",
         choices=[
@@ -207,8 +238,11 @@ def run_wizard() -> None:
 
     cell = _ask(questionary.text("Cell 'a b c' (blank = use the file's cell):",
                                  default="")) or None
-    charge = int(_ask(questionary.text("Charge:", default="0")))
-    multiplicity = int(_ask(questionary.text("Spin multiplicity (2S+1):", default="1")))
+    if cs_task and task == cs_task:
+        charge = int(_ask(questionary.text("Charge:", default="0")))
+        multiplicity = int(_ask(questionary.text("Spin multiplicity (2S+1):", default="1")))
+    else:
+        charge, multiplicity = 0, 1
     temperature = float(_ask(questionary.text("Temperature (K):", default="298.15")))
     timestep = float(_ask(questionary.text("Timestep (fs):", default="0.5")))
     nsteps = int(_ask(questionary.text("Number of steps:", default="10000")))
@@ -226,7 +260,7 @@ def run_wizard() -> None:
     output = _ask(questionary.text("Script filename:", default=default_name))
 
     cfg = NVTConfig(
-        checkpoint=checkpoint, calculator=calculator, job=job,
+        checkpoint=checkpoint, calculator=calculator, job=job, task_name=task,
         structure=structure, restart=restart,
         cell=cell, charge=charge, multiplicity=multiplicity,
         temperature=temperature, timestep=timestep, nsteps=nsteps,

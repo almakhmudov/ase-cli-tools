@@ -15,7 +15,7 @@ from __future__ import annotations
 # Shared parameters emitted for every job (structure loading + device).
 SHARED_PARAMS = [
     "STRUCTURE", "RESTART", "DEVICE",
-    "CELL", "PBC", "CHARGE", "MULTIPLICITY",
+    "CELL", "PBC",
 ]
 
 # --- calculators ----------------------------------------------------------- #
@@ -24,6 +24,19 @@ CALCULATORS = {
         "label": "UMA (FairChem)",
         "template": "calculators/uma.py.tmpl",
         "params": ["CHECKPOINT", "TASK_NAME"],
+        # UMA property heads. The user picks one; each targets a domain.
+        "tasks": {
+            "oc20": "catalysis",
+            "oc22": "oxide catalysis (UMA 1p2 only)",
+            "oc25": "(electro)catalysis (UMA 1p2 only)",
+            "omat": "inorganic materials",
+            "omol": "molecules & polymers (uses charge & spin)",
+            "odac": "MOFs",
+            "omc":  "molecular crystals",
+        },
+        # This task additionally consumes the CHARGE and MULTIPLICITY params;
+        # for every other task they are neither prompted nor written.
+        "charge_spin_task": "omol",
     },
     # Future: "mace": {...}
 }

@@ -18,5 +18,3 @@ atoms = read(RESTART if restart else STRUCTURE, index=-1)
 if CELL is not None:
     atoms.set_cell(CELL)
 atoms.set_pbc(PBC)
-atoms.info["charge"] = CHARGE
-atoms.info["spin"] = MULTIPLICITY

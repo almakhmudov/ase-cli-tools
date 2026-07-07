@@ -134,9 +134,29 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     traj_path, wrapped_path, fmt = _traj_paths(cfg)
     values = _param_values(cfg, traj_path, wrapped_path)
 
+    # Validate the calculator task, if the calculator declares a task set.
+    tasks = calc.get("tasks")
+    if tasks and cfg.task_name not in tasks:
+        raise KeyError(f"unknown task {cfg.task_name!r} for calculator "
+                       f"{cfg.calculator!r}; available: {sorted(tasks)}")
+
+    # The charge/spin params (and the lines that set them) apply only to the
+    # calculator's designated charge/spin task (UMA: 'omol').
+    cs_task = calc.get("charge_spin_task")
+    use_charge_spin = cs_task is not None and cfg.task_name == cs_task
+    charge_spin_block = (
+        f"\n# The {cs_task!r} task uses the system's total charge and spin "
+        f"multiplicity.\n"
+        'atoms.info["charge"] = CHARGE\n'
+        'atoms.info["spin"] = MULTIPLICITY\n'
+        if use_charge_spin else ""
+    )
+
     # Collect the parameter names contributed by each selected component.
     keys = list(registry.SHARED_PARAMS)
     keys += calc["params"]
+    if use_charge_spin:
+        keys += ["CHARGE", "MULTIPLICITY"]
     keys += job["params"]
     if cfg.wrap:
         keys += registry.FEATURES["wrap"]["params"]
@@ -146,7 +166,7 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     plumed_lines = _read_plumed_lines(cfg.plumed) if biased else None
     params_block = _render_params(keys, values, plumed_lines)
 
-    title = f"{job['label']} with {calc['label']}"
+    title = f"{job['label']} with {calc['label']} ({cfg.task_name})"
     if biased:
         title += " + PLUMED"
 
@@ -154,7 +174,8 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     parts = [
         _header(title, script_name),
         Template(_load("preamble.py.tmpl")).substitute(PARAMS=params_block),
-        _load(calc["template"]),
+        Template(_load(calc["template"])).safe_substitute(
+            CHARGE_SPIN=charge_spin_block),
         _load(registry.FEATURES["plumed"]["attach_template"]) if biased
         else _load("attach/plain.py.tmpl"),
     ]

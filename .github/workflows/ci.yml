@@ -1,11 +1,11 @@
 name: CI
 
-# Run on every push and on pull requests targeting main.
+# Run on every push and on pull requests targeting main or dev.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   smoke-test:
