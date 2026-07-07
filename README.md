@@ -11,10 +11,11 @@ queue, version-control and publish. The script *is* the record of what ran, so
 your work stays reproducible.
 
 The building blocks are predefined and tested, and assembled from modular
-skeletons — in the spirit of ASE's own swappable calculators and dynamics. The
-first release covers **NVT molecular dynamics with the UMA potential**
-(from [FairChem](https://github.com/facebookresearch/fairchem)), with optional
-PLUMED biasing; more calculators, ensembles and job types are on the roadmap.
+skeletons — in the spirit of ASE's own swappable calculators and dynamics. Now
+the toolkit covers **NVT molecular dynamics** with the **UMA**
+(from [FairChem](https://github.com/facebookresearch/fairchem)) and **MACE**
+potentials, with optional PLUMED biasing; more calculators, ensembles and job
+types are on the roadmap.
 
 > **Status:** early prototype. Interfaces may change.
 
