@@ -1,0 +1,15 @@
+
+# --- attach calculator (PLUMED bias on top of the MLIP) ---------------------
+from ase.calculators.plumed import Plumed
+
+atoms.calc = Plumed(
+    calc=base_calc,
+    input=PLUMED_INPUT,
+    timestep=TIMESTEP * units.fs,   # ASE time units, matches the integrator
+    atoms=atoms,
+    kT=units.kB * TEMPERATURE,      # thermal energy in eV
+    log=PLUMED_LOG,
+    restart=restart,
+)
+if restart and PREV_STEPS is not None:
+    atoms.calc.istep = PREV_STEPS

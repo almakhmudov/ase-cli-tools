@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ase-cli-tools"
+version = "0.1.0"
+description = "A friendly CLI (and, later, GUI) for building and running ASE jobs."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Albert Makhmudov" }]
+dependencies = [
+    "typer>=0.12",
+    "questionary>=2.0",
+    "ase>=3.29",
+]
+
+# Note: the MD backend also needs fairchem-core + torch (and py-plumed for
+# biased runs). Those are best installed via the conda environment.yml.
+
+[project.scripts]
+ase-cli-tools = "cli.app:app"
+
+[tool.setuptools]
+packages = ["cli"]
+
+[tool.setuptools.package-data]
+# ship the skeleton templates with the package
+cli = ["templates/*.tmpl", "templates/**/*.tmpl"]

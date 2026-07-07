@@ -1,0 +1,14 @@
+# Example PLUMED input for a biased NVT run with nvt_md_uma.py.
+#
+# IMPORTANT: every PLUMED command/definition must be on ONE line. The ASE
+# Python interface reads the file line by line, so line continuations are not
+# allowed. Comment lines ('#') are stripped automatically by the script.
+#
+# This toy example biases the distance between atoms 1 and 2 with a repulsive
+# upper wall and well-tempered metadynamics. Edit the CV(s) for your system.
+
+UNITS LENGTH=A TIME=fs ENERGY=eV
+d: DISTANCE ATOMS=1,2
+UPPER_WALLS ARG=d AT=5.0 KAPPA=100.0 LABEL=uwall
+METAD ARG=d PACE=500 HEIGHT=0.02 SIGMA=0.2 BIASFACTOR=10 GRID_MIN=0 GRID_MAX=15 GRID_BIN=300 FILE=HILLS
+PRINT ARG=d FILE=COLVAR STRIDE=50

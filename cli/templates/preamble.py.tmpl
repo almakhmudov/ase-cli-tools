@@ -1,0 +1,22 @@
+import numpy as np
+from ase import units
+from ase.io import read, write
+
+# --- parameters (edit me) ---------------------------------------------------
+$PARAMS
+
+# --- device -----------------------------------------------------------------
+device = DEVICE
+if device == "auto":
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}", flush=True)
+
+# --- load structure ---------------------------------------------------------
+restart = RESTART is not None
+atoms = read(RESTART if restart else STRUCTURE, index=-1)
+if CELL is not None:
+    atoms.set_cell(CELL)
+atoms.set_pbc(PBC)
+atoms.info["charge"] = CHARGE
+atoms.info["spin"] = MULTIPLICITY

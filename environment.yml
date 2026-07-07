@@ -1,0 +1,49 @@
+# Conda environment for ase-cli-tools.
+#
+# Create with:
+#     conda env create -f environment.yml
+#     conda activate uma-md
+#
+# Versions are pinned to a known-good, tested combination. PLUMED is installed
+# from conda-forge (the "nompi" build is sufficient for these single-process
+# runs); py-plumed provides the Python interface used for biased MD.
+#
+# NOTE on PyTorch / CUDA:
+#   The pip `torch==2.8.0` wheel below pulls the CUDA 12 build, which is what
+#   you want on GPU nodes. For a CPU-only machine install the CPU wheel instead,
+#   e.g.  pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+#
+# NOTE on the UMA checkpoint:
+#   The UMA model weights are NOT included here and are NOT redistributed by
+#   this repository. Obtain them from the FairChem / Meta "facebook/UMA"
+#   release (subject to their licence/terms) and pass the path via --checkpoint.
+
+name: ase-cli-tools
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.11
+  - pip
+
+  # --- core scientific stack -------------------------------------------------
+  - ase=3.29          # NVT integrators, I/O; >=3.29 provides thermalize_momenta
+  - numpy=2.4
+  - scipy=1.17
+
+  # --- command-line interface ------------------------------------------------
+  - typer>=0.12       # the `ase-cli-tools` CLI front-end
+  - questionary>=2.0  # arrow-key interactive wizard
+
+  # --- PLUMED (biased MD: metadynamics, walls, ...) --------------------------
+  - plumed=2.9.2
+  - py-plumed=2.9.2
+
+  # --- installed via pip -----------------------------------------------------
+  - pip:
+      # FairChem provides the UMA calculator; this pulls in torch, e3nn,
+      # numba and the other runtime dependencies automatically.
+      - fairchem-core==2.21.0
+      # Pinned for reproducibility; see the CUDA/CPU note above.
+      - torch==2.8.0

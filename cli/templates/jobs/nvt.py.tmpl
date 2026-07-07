@@ -1,0 +1,55 @@
+
+# --- initial velocities ------------------------------------------------------
+from ase.md.velocitydistribution import Stationary, ZeroRotation
+try:
+    from ase.md.velocitydistribution import thermalize_momenta as set_momenta
+except ImportError:  # ASE < 3.29
+    from ase.md.velocitydistribution import (
+        MaxwellBoltzmannDistribution as set_momenta,
+    )
+
+if restart and np.any(atoms.get_momenta()):
+    print("Restart: carrying over positions and velocities.", flush=True)
+else:
+    set_momenta(atoms, temperature_K=TEMPERATURE, rng=np.random.default_rng(SEED))
+    Stationary(atoms)
+
+# --- Nose-Hoover chain NVT ---------------------------------------------------
+from ase.md.nose_hoover_chain import NoseHooverChainNVT
+from ase.io.trajectory import Trajectory
+from ase.calculators.singlepoint import SinglePointCalculator
+
+tdamp = TDAMP if TDAMP is not None else max(100.0 * TIMESTEP, 20.0)
+dyn = NoseHooverChainNVT(
+    atoms,
+    timestep=TIMESTEP * units.fs,
+    temperature_K=TEMPERATURE,
+    tdamp=tdamp * units.fs,
+    tchain=TCHAIN,
+    tloop=TLOOP,
+)
+$TRAJ_WRITER
+logf = open(LOG, "w")
+logf.write("# frame  time_fs  E_pot_eV  E_kin_eV  E_tot_eV  T_K\n")
+_frame = [0]
+def _log():
+    epot = atoms.get_potential_energy()
+    ekin = atoms.get_kinetic_energy()
+    logf.write(f"{_frame[0]:8d} {dyn.get_number_of_steps() * TIMESTEP:12.2f} "
+               f"{epot:16.6f} {ekin:16.6f} {epot + ekin:16.6f} "
+               f"{atoms.get_temperature():8.2f}\n")
+    logf.flush()
+    _frame[0] += 1
+dyn.attach(_log, interval=TRAJ_INTERVAL)
+
+dyn.run(NSTEPS)
+_close_traj()
+logf.close()
+
+# --- final frame (extxyz) ----------------------------------------------------
+out = atoms.copy()
+out.arrays.pop("momenta", None)
+out.info = {"step": NSTEPS, "time_fs": NSTEPS * TIMESTEP}
+out.calc = SinglePointCalculator(out, energy=atoms.get_potential_energy())
+write(LAST_FRAME, out, format="extxyz")
+print(f"Done. Wrote {TRAJ}, {LOG}, {LAST_FRAME}.", flush=True)

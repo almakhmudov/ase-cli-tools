@@ -1,0 +1,20 @@
+# pip requirements for ase-cli-tools.
+#
+# The recommended install path is the conda environment (see environment.yml),
+# because PLUMED and its Python interface (py-plumed) are most easily obtained
+# from conda-forge. This file covers the pip-installable pieces for users who
+# manage ASE and PLUMED separately.
+#
+# For CPU-only PyTorch, install with:
+#   pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+
+ase==3.29.0
+numpy>=2.4,<3
+scipy>=1.17
+fairchem-core==2.21.0
+torch==2.8.0
+
+# PLUMED Python interface (needed only for biased runs via --plumed).
+# Prefer conda-forge (py-plumed); the pip package requires a working PLUMED
+# library/kernel to be present on the system.
+# plumed==2.9.2

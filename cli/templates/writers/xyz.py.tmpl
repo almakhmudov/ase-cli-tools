@@ -1,0 +1,5 @@
+_traj_fh = open(TRAJ, "w")
+def _write_frame():
+    write(_traj_fh, atoms, format="extxyz")
+dyn.attach(_write_frame, interval=TRAJ_INTERVAL)
+_close_traj = _traj_fh.close

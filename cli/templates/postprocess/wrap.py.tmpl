@@ -1,0 +1,10 @@
+from ase.io import read, write
+
+INPUT  = $INPUT
+OUTPUT = $OUTPUT
+
+frames = read(INPUT, index=":")
+for atoms in frames:
+    atoms.wrap()
+write(OUTPUT, frames)
+print(f"Wrapped {len(frames)} frames -> {OUTPUT}")

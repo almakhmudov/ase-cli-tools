@@ -1,0 +1,7 @@
+
+# --- calculator: UMA (FairChem) ---------------------------------------------
+from fairchem.core import FAIRChemCalculator
+from fairchem.core.units.mlip_unit import load_predict_unit
+
+predictor = load_predict_unit(CHECKPOINT, device=device)
+base_calc = FAIRChemCalculator(predictor, task_name=TASK_NAME)

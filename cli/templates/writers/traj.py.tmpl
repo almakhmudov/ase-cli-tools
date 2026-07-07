@@ -1,0 +1,3 @@
+traj = Trajectory(TRAJ, "w", atoms)
+dyn.attach(traj.write, interval=TRAJ_INTERVAL)
+_close_traj = traj.close

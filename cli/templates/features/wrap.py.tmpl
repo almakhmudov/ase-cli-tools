@@ -1,0 +1,7 @@
+
+# --- wrap every frame into the primary cell ----------------------------------
+frames = read(TRAJ, index=":")
+for _f in frames:
+    _f.wrap()
+write(WRAPPED, frames)
+print(f"Wrote wrapped trajectory {WRAPPED}.", flush=True)

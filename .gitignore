@@ -1,0 +1,33 @@
+# --- model checkpoints (never commit; large and licence-restricted) ---
+*.pt
+*.ckpt
+*.pth
+
+# --- MD outputs ---
+*.traj
+*_wrapped.traj
+*_wrapped.xyz
+last_frame*.xyz
+equil.xyz
+*.log
+*_backup*.*
+
+# --- PLUMED outputs / artefacts ---
+HILLS
+COLVAR
+bck.*
+*_parsed.dat
+plumed.log
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# --- environments / editors ---
+.venv/
+.env
+.idea/
+.vscode/
+.DS_Store
