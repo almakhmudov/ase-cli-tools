@@ -1,0 +1,51 @@
+name: CI
+
+# Run on every push and on pull requests targeting main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke-test:
+    name: Smoke test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install light dependencies
+        # Only the CLI's own deps -- not the heavy MD backend (torch, fairchem,
+        # plumed), which isn't needed to smoke-test the interface.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "typer>=0.12" "questionary>=2.0" "ase>=3.29"
+
+      - name: Syntax-check every Python file
+        run: python -m py_compile $(git ls-files '*.py')
+
+      - name: CLI help runs
+        run: |
+          python -m cli.app --help
+          python -m cli.app md run --help
+          python -m cli.app postprocess wrap --help
+
+      - name: Generated scripts are valid Python
+        # Assemble each script variant to stdout, write it out, and py_compile it.
+        run: |
+          python -m cli.app md run --job nvt -c model.pt -s in.xyz \
+            --cell "20 20 20" --stdout > /tmp/nvt.py
+          python -m cli.app md run --job nvt -c model.pt -s in.xyz \
+            --cell "20 20 20" --plumed examples/plumed.dat --stdout > /tmp/biased.py
+          python -m cli.app postprocess wrap in.traj --stdout > /tmp/wrap.py
+          python -m py_compile /tmp/nvt.py /tmp/biased.py /tmp/wrap.py

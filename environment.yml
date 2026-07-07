@@ -2,7 +2,7 @@
 #
 # Create with:
 #     conda env create -f environment.yml
-#     conda activate uma-md
+#     conda activate ase-cli-tools
 #
 # Versions are pinned to a known-good, tested combination. PLUMED is installed
 # from conda-forge (the "nompi" build is sufficient for these single-process

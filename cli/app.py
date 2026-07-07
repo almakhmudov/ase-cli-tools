@@ -5,12 +5,12 @@ so that jobs are reproducible and publishable. It can optionally run the script
 it just wrote.
 
 Two ways to use it, both requested:
-  * flag-driven (scriptable):        ase-cli-tools md nvt -c uma.pt -s in.xyz ...
+  * flag-driven (scriptable):        ase-cli-tools md run --job nvt -c uma.pt -s in.xyz ...
   * interactive arrow-key wizard:    ase-cli-tools        (no arguments)
 
 Categories
 ----------
-  md           molecular dynamics jobs   (nvt, biased-nvt)
+  md           molecular dynamics jobs   (--job nvt, ...); --plumed adds biasing
   postprocess  post-processing tasks     (wrap)
 """
 
