@@ -13,10 +13,11 @@ your work stays reproducible.
 The building blocks are predefined and tested, and assembled from modular
 skeletons — in the spirit of ASE's own swappable calculators and dynamics. Now
 the toolkit covers **NVT molecular dynamics** with the **UMA**
-(from [FairChem](https://github.com/facebookresearch/fairchem)), **MACE** and
-**Orb** (from [orb-models](https://github.com/orbital-materials/orb-models))
-potentials, with optional PLUMED biasing; more calculators, ensembles and job
-types are on the roadmap.
+(from [FairChem](https://github.com/facebookresearch/fairchem)), **MACE**
+(from [ACEsuit](https://github.com/ACEsuit/mace)) and **Orb**
+(from [orb-models](https://github.com/orbital-materials/orb-models)) potentials,
+with optional PLUMED biasing; more calculators, ensembles and job types are on
+the roadmap.
 
 > **Status:** early prototype. Interfaces may change.
 
@@ -33,16 +34,34 @@ types are on the roadmap.
 
 ## Installation
 
-The recommended path is a conda environment (PLUMED and its Python interface are
-easiest to obtain from conda-forge):
+The base tool is lightweight — it only needs Python, [ASE](https://wiki.fysik.dtu.dk/ase/),
+Typer and questionary, and that is enough to **generate** job scripts:
 
 ```bash
-conda env create -f environment.yml
-conda activate ase-cli-tools
 pip install -e .            # installs the `ase-cli-tools` command
 ```
 
-For a CPU-only machine, replace the CUDA PyTorch wheel with the CPU build:
+Every calculator and the PLUMED biasing are **optional** backends: you only need
+them to **run** the generated script for that kind of job. Install just the ones
+you use (below), or, for a full tested environment with everything at once, use
+the bundled conda file:
+
+```bash
+conda env create -f environment.yml   # base tool + all backends + PLUMED
+conda activate ase-cli-tools
+pip install -e .
+```
+
+### UMA backend (optional)
+
+The UMA calculator (`--calculator uma`, the default) needs FairChem and PyTorch:
+
+```bash
+pip install fairchem-core==2.21.0 torch==2.8.0
+```
+
+The `torch==2.8.0` wheel pulls the CUDA build. For a CPU-only machine, use the
+CPU wheel instead:
 
 ```bash
 pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
@@ -66,6 +85,15 @@ weights are downloaded by name on first use, so no checkpoint file is required:
 
 ```bash
 pip install orb-models
+```
+
+### PLUMED biasing (optional)
+
+Biased runs (`--plumed`) need PLUMED's Python interface, easiest from
+conda-forge:
+
+```bash
+conda install -c conda-forge py-plumed=2.9.2
 ```
 
 ## Usage
@@ -151,7 +179,9 @@ materials), `omol` (molecules & polymers, the default), `odac` (MOFs) and `omc`
 (molecular crystals). Only `omol` uses `--charge`/`--multiplicity`; they are
 ignored for the other tasks. The Nose-Hoover thermostat is tunable via
 `--tdamp` (coupling time in fs; omit for the auto value of `100*timestep`, at
-least 20 fs), `--tchain` (chain length) and `--tloop` (inner loops).
+least 20 fs), `--tchain` (chain length) and `--tloop` (inner loops). `--seed`
+sets the RNG seed for the initial Maxwell-Boltzmann velocities (default `42`) so
+a fresh-start run is reproducible.
 
 `--calculator` chooses the backend (`uma`, `mace`, `orb`), with `-c`/`--checkpoint`
 pointing at that backend's model file where one is needed. For MACE, `--variant`

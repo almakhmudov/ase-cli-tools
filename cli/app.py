@@ -161,6 +161,9 @@ def md_run(
     temperature: float = typer.Option(298.15, "--temperature", "-T"),
     timestep: float = typer.Option(0.5, "--timestep", "-dt", help="fs."),
     nsteps: int = typer.Option(10000, "--nsteps", "-n"),
+    seed: int = typer.Option(42, "--seed",
+                             help="RNG seed for the initial Maxwell-Boltzmann "
+                                  "velocities (for reproducibility)."),
     tdamp: Optional[float] = typer.Option(None, "--tdamp",
                                           help="Nose-Hoover coupling time in fs. "
                                                "Omit = auto (100*timestep, min 20 fs)."),
@@ -186,7 +189,7 @@ def md_run(
         external_field=external_field,
         structure=structure, restart=restart,
         cell=cell, pbc=pbc, charge=charge, multiplicity=multiplicity,
-        temperature=temperature, timestep=timestep, nsteps=nsteps,
+        temperature=temperature, timestep=timestep, nsteps=nsteps, seed=seed,
         tdamp=tdamp, tchain=tchain, tloop=tloop,
         traj_interval=traj_interval, traj_format=traj_format, wrap=wrap,
         plumed=plumed, prev_steps=prev_steps,

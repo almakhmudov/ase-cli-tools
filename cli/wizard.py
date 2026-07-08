@@ -355,6 +355,8 @@ def _build_steps() -> List[Step]:
              applies=_is_md, default=0.5, cast=float, label="Timestep (fs)"),
         Step("nsteps", "text", "Number of steps",
              applies=_is_md, default=10000, cast=int, label="Number of steps"),
+        Step("seed", "text", "RNG seed for the initial velocities",
+             applies=_is_md, default=42, cast=int, label="RNG seed"),
 
         # --- MD: thermostat (behind an opt-in) ------------------------------
         Step("adjust_thermostat", "bool",
@@ -496,6 +498,7 @@ def _build_nvt(state) -> NVTConfig:
         temperature=state.get("temperature", 298.15),
         timestep=state.get("timestep", 0.5),
         nsteps=state.get("nsteps", 10000),
+        seed=state.get("seed", 42),
         tdamp=state.get("tdamp"),
         tchain=state.get("tchain", 3),
         tloop=state.get("tloop", 1),
