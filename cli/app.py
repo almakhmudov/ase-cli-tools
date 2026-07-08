@@ -77,17 +77,6 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
     if "CHECKPOINT" in comp["params"] and not cfg.checkpoint:
         raise typer.BadParameter("a calculator --checkpoint is required.")
 
-    tasks = calc_spec.get("tasks")
-    if tasks and cfg.task_name not in tasks:
-        raise typer.BadParameter(f"unknown task {cfg.task_name!r} for "
-                                 f"{cfg.calculator!r}; choose from {list(tasks)}.")
-
-    # Validate --model against the calculator's offered set (GRACE).
-    models = calc_spec.get("models")
-    if models and cfg.model is not None and cfg.model not in models:
-        raise typer.BadParameter(f"unknown model {cfg.model!r} for "
-                                 f"{cfg.calculator!r}; choose from {list(models)}.")
-
     # Validate --precision against the chosen variant's allowed values.
     pspec = comp.get("precision")
     if pspec and cfg.precision is not None and cfg.precision not in pspec["choices"]:
@@ -95,9 +84,9 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
             f"unknown precision {cfg.precision!r} for "
             f"{cfg.variant or cfg.calculator!r}; choose from {pspec['choices']}.")
 
-    # Warn when charge/multiplicity are set but the chosen calculator/task/
-    # variant does not use them.
-    if (not registry.uses_charge_spin(cfg.calculator, cfg.task_name, cfg.variant)
+    # Warn when charge/multiplicity are set but the chosen variant does not use
+    # them.
+    if (not registry.uses_charge_spin(cfg.calculator, cfg.variant)
             and (cfg.charge != 0 or cfg.multiplicity != 1)):
         typer.secho("Note: --charge/--multiplicity are only used by UMA's 'omol' "
                     "task, MACE-POLAR and OrbMol-v2; ignoring them here.",
@@ -122,10 +111,13 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
 # --------------------------------------------------------------------------- #
 _MD_JOBS = [name for name, spec in registry.JOBS.items()
             if spec.get("category") == "md"]
-_UMA_TASKS = list(registry.CALCULATORS["uma"].get("tasks", {}))
-_MACE_VARIANTS = list(registry.CALCULATORS["mace"].get("variants", {}))
-_ORB_VARIANTS = list(registry.CALCULATORS["orb"].get("variants", {}))
-_GRACE_MODELS = list(registry.CALCULATORS["grace"].get("models", {}))
+# Variant choices per calculator, e.g. {'uma': ['oc20', ..., 'omol'], 'mace':
+# [...], 'grace': [...]} -- the value of --variant depends on --calculator.
+_VARIANTS = {name: list(spec["variants"])
+             for name, spec in registry.CALCULATORS.items()
+             if spec.get("variants")}
+_VARIANT_HELP = "Variant (choices depend on --calculator): " + "; ".join(
+    f"{c} -> {vs}" for c, vs in _VARIANTS.items())
 
 
 @md_app.command("run")
@@ -134,18 +126,9 @@ def md_run(
     checkpoint: str = typer.Option(None, "--checkpoint", "-c",
                                    help="Calculator model/checkpoint file."),
     calculator: str = typer.Option("uma", "--calculator", help=f"MLIP backend: {_CALCULATORS}."),
-    variant: Optional[str] = typer.Option(None, "--variant",
-                                          help=f"MACE variant: {_MACE_VARIANTS} "
-                                               f"(default: mace_mp); Orb variant: "
-                                               f"{_ORB_VARIANTS} (default: "
-                                               "orb_v3_omat)."),
-    task: str = typer.Option("omol", "--task", "-t",
-                             help=f"UMA task/property head: {_UMA_TASKS}. Only "
-                                  "'omol' uses --charge and --multiplicity."),
-    model: Optional[str] = typer.Option(None, "--model",
-                                        help=f"GRACE foundation model: "
-                                             f"{_GRACE_MODELS} (default: "
-                                             "GRACE-1L-OMAT-medium-ft-E)."),
+    variant: Optional[str] = typer.Option(None, "--variant", "-t",
+                                          help=_VARIANT_HELP + ". Omit to use the "
+                                          "calculator's default."),
     precision: Optional[str] = typer.Option(
         None, "--precision",
         help="Floating-point precision. MACE: float32 | float64 (default "
@@ -194,8 +177,7 @@ def md_run(
         raise typer.BadParameter(f"unknown job {job!r}; choose from {_MD_JOBS}.")
     cfg = NVTConfig(
         checkpoint=checkpoint, calculator=calculator, variant=variant,
-        job=job, task_name=task, model=model,
-        precision=precision,
+        job=job, precision=precision,
         dispersion=_parse_bool(dispersion, "--dispersion"),
         external_field=external_field,
         structure=structure, restart=restart,

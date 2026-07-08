@@ -18,25 +18,52 @@ SHARED_PARAMS = [
     "CELL", "PBC",
 ]
 
+# Every calculator is a *family* of one or more variants selected with
+# ``--variant``. A variant names its skeleton template, the params it contributes
+# and, when it shares a template with its siblings, the fixed param ``values`` it
+# bakes in (e.g. a UMA task head or a GRACE model name). A variant flagged
+# ``uses_charge_spin`` additionally consumes CHARGE/MULTIPLICITY.
+
+# UMA property heads: one shared template, differing only by the TASK_NAME value.
+# 'omol' is the charge/spin head. Built into variants below.
+_UMA_TASKS = {
+    "oc20": "catalysis",
+    "oc22": "oxide catalysis (UMA 1p2 only)",
+    "oc25": "(electro)catalysis (UMA 1p2 only)",
+    "omat": "inorganic materials",
+    "omol": "molecules & polymers (uses charge & spin)",
+    "odac": "MOFs",
+    "omc":  "molecular crystals",
+}
+
+# GRACE foundation models: one shared template, differing only by MODEL. No
+# checkpoint file (weights download by name); runs on TensorFlow, not PyTorch.
+_GRACE_MODELS = {
+    "GRACE-1L-OMAT-medium-ft-E": "1-layer OMAT, medium, fine-tuned (E)",
+    "GRACE-1L-OMAT-large-ft-E":  "1-layer OMAT, large, fine-tuned (E)",
+    "GRACE-2L-OMAT-medium-ft-E": "2-layer OMAT, medium, fine-tuned (E)",
+    "GRACE-2L-OMAT-large-ft-E":  "2-layer OMAT, large, fine-tuned (E)",
+    "GRACE-3L-OMAT-large":       "3-layer OMAT, large",
+}
+
 # --- calculators ----------------------------------------------------------- #
 CALCULATORS = {
     "uma": {
         "label": "UMA (FairChem)",
-        "template": "calculators/uma.py.tmpl",
-        "params": ["CHECKPOINT", "TASK_NAME"],
-        # UMA property heads. The user picks one; each targets a domain.
-        "tasks": {
-            "oc20": "catalysis",
-            "oc22": "oxide catalysis (UMA 1p2 only)",
-            "oc25": "(electro)catalysis (UMA 1p2 only)",
-            "omat": "inorganic materials",
-            "omol": "molecules & polymers (uses charge & spin)",
-            "odac": "MOFs",
-            "omc":  "molecular crystals",
+        # One variant per property head; all share the UMA template and pin
+        # TASK_NAME. 'omol' additionally uses the system's charge & spin.
+        "variants": {
+            name: {
+                "label": f"UMA ({name})",
+                "desc": desc,
+                "template": "calculators/uma.py.tmpl",
+                "params": ["CHECKPOINT", "TASK_NAME"],
+                "values": {"TASK_NAME": name},
+                **({"uses_charge_spin": True} if name == "omol" else {}),
+            }
+            for name, desc in _UMA_TASKS.items()
         },
-        # This task additionally consumes the CHARGE and MULTIPLICITY params;
-        # for every other task they are neither prompted nor written.
-        "charge_spin_task": "omol",
+        "default_variant": "omol",
     },
     "mace": {
         "label": "MACE",
@@ -107,18 +134,19 @@ CALCULATORS = {
     },
     "grace": {
         "label": "GRACE (tensorpotential)",
-        "template": "calculators/grace.py.tmpl",
-        "params": ["MODEL"],
-        # GRACE foundation models, selected by name (no checkpoint file needed;
-        # weights download on first use). Runs on TensorFlow, not PyTorch.
-        "models": {
-            "GRACE-1L-OMAT-medium-ft-E": "1-layer OMAT, medium, fine-tuned (E)",
-            "GRACE-1L-OMAT-large-ft-E":  "1-layer OMAT, large, fine-tuned (E)",
-            "GRACE-2L-OMAT-medium-ft-E": "2-layer OMAT, medium, fine-tuned (E)",
-            "GRACE-2L-OMAT-large-ft-E":  "2-layer OMAT, large, fine-tuned (E)",
-            "GRACE-3L-OMAT-large":       "3-layer OMAT, large",
+        # One variant per foundation model; all share the GRACE template and pin
+        # MODEL. No checkpoint file needed.
+        "variants": {
+            name: {
+                "label": name,
+                "desc": desc,
+                "template": "calculators/grace.py.tmpl",
+                "params": ["MODEL"],
+                "values": {"MODEL": name},
+            }
+            for name, desc in _GRACE_MODELS.items()
         },
-        "default_model": "GRACE-1L-OMAT-medium-ft-E",
+        "default_variant": "GRACE-1L-OMAT-medium-ft-E",
     },
 }
 
@@ -143,19 +171,13 @@ def resolve_variant(calculator: str, variant: "str | None" = None):
     return name, variants[name]
 
 
-def uses_charge_spin(calculator: str, task_name: "str | None" = None,
-                     variant: "str | None" = None) -> bool:
-    """Whether this calculator/task/variant combination reads charge & spin.
+def uses_charge_spin(calculator: str, variant: "str | None" = None) -> bool:
+    """Whether the chosen variant reads the system's charge & spin.
 
-    True for UMA's designated ``charge_spin_task`` (omol) and for any variant
-    flagged ``uses_charge_spin`` (MACE-POLAR).
-    """
-    calc = CALCULATORS[calculator]
+    True for any variant flagged ``uses_charge_spin`` (UMA 'omol', MACE-POLAR,
+    OrbMol-v2)."""
     _, comp = resolve_variant(calculator, variant)
-    if comp.get("uses_charge_spin"):
-        return True
-    cs_task = calc.get("charge_spin_task")
-    return cs_task is not None and task_name == cs_task
+    return bool(comp.get("uses_charge_spin"))
 
 
 def precision_spec(calculator: str, variant: "str | None" = None):

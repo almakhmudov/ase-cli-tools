@@ -118,15 +118,15 @@ Just run the command with no arguments and follow the prompts:
 ase-cli-tools
 ```
 
-You pick the job category, the ensemble, whether to bias it, and the calculator
-(and, where it applies, a variant, a UMA task, and the precision) from menus,
-then type the remaining parameters — periodicity, cell, temperature, timestep,
-steps, recording interval and so on. Every typed prompt shows its default in
-parentheses and accepts a blank to use it. Charge and spin are only asked when
-the calculator uses them (UMA's `omol` task, MACE-POLAR and OrbMol-v2), and the
-Nose-Hoover thermostat parameters are behind an optional step so you can leave
-them at their defaults. The wizard exposes the same options as the flags, so
-nothing is reachable by flag alone.
+You pick the job category, the ensemble, whether to bias it, the calculator and
+its variant (the family member — a MACE/Orb variant, a UMA head, or a GRACE
+model) and, where it applies, the precision from menus, then type the remaining
+parameters — periodicity, cell, temperature, timestep, steps, recording interval
+and so on. Every typed prompt shows its default in parentheses and accepts a
+blank to use it. Charge and spin are only asked when the chosen variant uses them
+(UMA `omol`, MACE-POLAR and OrbMol-v2), and the Nose-Hoover thermostat parameters
+are behind an optional step so you can leave them at their defaults. The wizard
+exposes the same options as the flags, so nothing is reachable by flag alone.
 
 You are never locked into a linear path. At **every** step you can go **back** to
 change the previous answer — including the job type — or **quit** the whole
@@ -149,9 +149,9 @@ ase-cli-tools md run --job nvt -c uma.pt -s mixture.xyz --cell "20 20 20" \
 ase-cli-tools md run --job nvt -p plumed.dat -c uma.pt \
     -s mixture.xyz --cell "20 20 20" -T 498.15 -n 500000
 
-# a non-molecular UMA task (no charge/spin): choose the property head with --task
+# a non-molecular UMA head (no charge/spin): choose it with --variant
 ase-cli-tools md run --job nvt -c uma.pt -s crystal.cif --cell "10 10 10" \
-    --task omat -T 300 -n 20000
+    --variant omat -T 300 -n 20000
 
 # custom Nose-Hoover thermostat (omitted values fall back to the defaults)
 ase-cli-tools md run --job nvt -c uma.pt -s mixture.xyz --cell "20 20 20" \
@@ -174,8 +174,8 @@ ase-cli-tools md run --job nvt --calculator orb -s crystal.cif --cell "10 10 10"
 ase-cli-tools md run --job nvt --calculator orb --variant orbmol_v2 \
     -s molecule.xyz --charge 0 --multiplicity 1 --precision float32-high -T 298.15 -n 10000
 
-# GRACE (no checkpoint file needed): pick a foundation model with --model
-ase-cli-tools md run --job nvt --calculator grace --model GRACE-2L-OMAT-large-ft-E \
+# GRACE (no checkpoint file needed): pick a foundation model with --variant
+ase-cli-tools md run --job nvt --calculator grace --variant GRACE-2L-OMAT-large-ft-E \
     -s crystal.cif --cell "10 10 10" -T 300 -n 20000
 
 # wrap post-processing
@@ -189,34 +189,37 @@ ase-cli-tools md run --job nvt -c uma.pt -s in.xyz --run
 Every job writes a `.py` file by default (`-o` to name it), `--stdout` prints it
 instead, and `--run` executes the freshly written script.
 
-`--task` selects the UMA property head: `oc20` (catalysis), `oc22` (oxide
-catalysis, 1p2 only), `oc25` ((electro)catalysis, 1p2 only), `omat` (inorganic
-materials), `omol` (molecules & polymers, the default), `odac` (MOFs) and `omc`
-(molecular crystals). Only `omol` uses `--charge`/`--multiplicity`; they are
-ignored for the other tasks. The Nose-Hoover thermostat is tunable via
-`--tdamp` (coupling time in fs; omit for the auto value of `100*timestep`, at
-least 20 fs), `--tchain` (chain length) and `--tloop` (inner loops). `--seed`
-sets the RNG seed for the initial Maxwell-Boltzmann velocities (default `42`) so
-a fresh-start run is reproducible.
+The Nose-Hoover thermostat is tunable via `--tdamp` (coupling time in fs; omit
+for the auto value of `100*timestep`, at least 20 fs), `--tchain` (chain length)
+and `--tloop` (inner loops). `--seed` sets the RNG seed for the initial
+Maxwell-Boltzmann velocities (default `42`) so a fresh-start run is reproducible.
 
-`--calculator` chooses the backend (`uma`, `mace`, `orb`, `grace`), with `-c`/`--checkpoint`
-pointing at that backend's model file where one is needed. For MACE, `--variant`
-selects the family member: `mace_mp` (materials, the default; `--dispersion True`
-adds a D3 correction), `mace_off` (organic molecules) and `mace_polar` (uses
-`--charge`/`--multiplicity` and an optional `--external-field "Ex Ey Ez"`). For
-Orb, `--variant` is `orb_v3_omat` (Orb-v3-conservative-inf-omat, the default;
-`--dispersion True` adds a D3 correction) or `orbmol_v2` (OrbMol-v2, which uses
-`--charge`/`--multiplicity`). Orb needs **no checkpoint** — weights load by name.
-For GRACE, `--model` picks a foundation model (`GRACE-1L-OMAT-medium-ft-E` — the
-default — `GRACE-1L-OMAT-large-ft-E`, `GRACE-2L-OMAT-medium-ft-E`,
-`GRACE-2L-OMAT-large-ft-E` or `GRACE-3L-OMAT-large`); it also needs **no
-checkpoint** and runs on TensorFlow.
-`--task` applies to UMA only. `--precision` sets the floating-point precision for
-both MACE (`float32`/`float64`, default `float64`) and Orb (`float32-highest` —
-the recommended default — `float32-high` or `float64`); omit it to take the
-calculator's default. Each backend or variant is a small template plus one
-registry entry, so biasing, the thermostat and the output options work the same across
-all of them.
+`--calculator` chooses the backend (`uma`, `mace`, `orb`, `grace`), with
+`-c`/`--checkpoint` pointing at that backend's model file where one is needed
+(MACE and UMA need one; Orb and GRACE load weights by name, so no checkpoint).
+Every backend is a family, and **`--variant` (`-t`) picks the family member** —
+its meaning depends on the calculator:
+
+- **UMA** — the property head: `oc20` (catalysis), `oc22`/`oc25` (1p2 only),
+  `omat` (inorganic materials), `omol` (molecules & polymers, the default;
+  the only UMA head that uses `--charge`/`--multiplicity`), `odac` (MOFs), `omc`
+  (molecular crystals).
+- **MACE** — `mace_mp` (materials, the default; `--dispersion True` adds a D3
+  correction), `mace_off` (organic molecules) or `mace_polar` (uses
+  `--charge`/`--multiplicity` and an optional `--external-field "Ex Ey Ez"`).
+- **Orb** — `orb_v3_omat` (Orb-v3-conservative-inf-omat, the default;
+  `--dispersion True` adds a D3 correction) or `orbmol_v2` (uses
+  `--charge`/`--multiplicity`).
+- **GRACE** — a foundation model: `GRACE-1L-OMAT-medium-ft-E` (default),
+  `GRACE-1L-OMAT-large-ft-E`, `GRACE-2L-OMAT-medium-ft-E`,
+  `GRACE-2L-OMAT-large-ft-E` or `GRACE-3L-OMAT-large` (runs on TensorFlow).
+
+Omit `--variant` to take the calculator's default. `--precision` sets the
+floating-point precision for MACE (`float32`/`float64`, default `float64`) and
+Orb (`float32-highest` — the recommended default — `float32-high` or `float64`);
+omit it to take the calculator's default. Each backend or variant is a small
+template plus one registry entry, so biasing, the thermostat and the output
+options work the same across all of them.
 
 Command layout:
 
@@ -224,7 +227,7 @@ Command layout:
 ase-cli-tools
 ├── md
 │   └── run          -> generate an MD script; --job selects the ensemble
-│                       (nvt, ...), --task the UMA head, --plumed biasing
+│                       (nvt, ...), --variant the calculator member, --plumed biasing
 └── postprocess
     └── wrap         -> generate a trajectory-wrapping script
 ```

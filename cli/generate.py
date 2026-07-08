@@ -86,8 +86,8 @@ def _param_values(cfg: NVTConfig, traj_path: str, wrapped_path: str) -> Dict[str
         "CHARGE": str(cfg.charge),
         "MULTIPLICITY": str(cfg.multiplicity),
         "CHECKPOINT": repr(cfg.checkpoint),
-        "TASK_NAME": repr(cfg.task_name),
-        "MODEL": repr(cfg.model),
+        # TASK_NAME (UMA) and MODEL (GRACE) are supplied by the chosen variant's
+        # fixed "values"; PRECISION is resolved from the variant default.
         "PRECISION": repr(cfg.precision),
         "DISPERSION": str(cfg.dispersion),
         "EXTERNAL_FIELD": repr(_parse_vec(cfg.external_field)),
@@ -150,9 +150,14 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     traj_path, wrapped_path, fmt = _traj_paths(cfg)
     values = _param_values(cfg, traj_path, wrapped_path)
 
-    # Resolve the calculator variant (MACE) to its component skeleton; for a
-    # variant-less calculator (UMA) this returns the calculator spec itself.
+    # Resolve the chosen variant to its component skeleton (every calculator is a
+    # variant family). An unknown variant raises KeyError here.
     variant_name, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
+
+    # A variant may pin fixed parameter values baked into the script (a UMA task
+    # head, a GRACE model name, ...); these override the cfg-derived values.
+    for name, value in comp.get("values", {}).items():
+        values[name] = repr(value)
 
     # Precision: fall back to the variant's default when the config leaves it
     # unset (None). Maps to MACE's default_dtype / Orb's precision in templates.
@@ -160,40 +165,23 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     if pspec:
         values["PRECISION"] = repr(cfg.precision or pspec["default"])
 
-    # Validate the calculator task, if the calculator declares a task set.
-    tasks = calc.get("tasks")
-    if tasks and cfg.task_name not in tasks:
-        raise KeyError(f"unknown task {cfg.task_name!r} for calculator "
-                       f"{cfg.calculator!r}; available: {sorted(tasks)}")
-
-    # Model selection (GRACE): fall back to the calculator's default_model when
-    # unset, then validate against the offered set.
-    models = calc.get("models")
-    effective_model = None
-    if models:
-        effective_model = cfg.model or calc.get("default_model") or next(iter(models))
-        if effective_model not in models:
-            raise KeyError(f"unknown model {effective_model!r} for calculator "
-                           f"{cfg.calculator!r}; available: {sorted(models)}")
-        values["MODEL"] = repr(effective_model)
-
-    # UMA sets charge/spin via a template placeholder that depends on the task
-    # ('omol'). Variants that use charge/spin (MACE-POLAR) bake those lines into
-    # their own skeleton and list the params directly, so no injection is needed.
-    cs_task = calc.get("charge_spin_task")
-    task_charge_spin = cs_task is not None and cfg.task_name == cs_task
+    # Charge/spin. A variant that uses them may either bake the atoms.info lines
+    # into its own skeleton (MACE-POLAR, OrbMol-v2) or rely on the $CHARGE_SPIN
+    # placeholder (UMA). We always compute the block and hand it to
+    # safe_substitute; skeletons without the placeholder simply ignore it.
+    uses_cs = bool(comp.get("uses_charge_spin"))
     charge_spin_block = (
-        f"\n# The {cs_task!r} task uses the system's total charge and spin "
-        f"multiplicity.\n"
+        "\n# This calculator uses the system's total charge and spin "
+        "multiplicity.\n"
         'atoms.info["charge"] = CHARGE\n'
         'atoms.info["spin"] = MULTIPLICITY\n'
-        if task_charge_spin else ""
+        if uses_cs else ""
     )
 
     # Collect the parameter names contributed by each selected component.
     keys = list(registry.SHARED_PARAMS)
     keys += comp["params"]
-    if task_charge_spin:
+    if uses_cs and "CHARGE" not in comp["params"]:
         keys += ["CHARGE", "MULTIPLICITY"]
     keys += job["params"]
     if cfg.wrap:
@@ -204,12 +192,7 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     plumed_lines = _read_plumed_lines(cfg.plumed) if biased else None
     params_block = _render_params(keys, values, plumed_lines)
 
-    calc_label = comp.get("label", calc["label"])
-    title = f"{job['label']} with {calc_label}"
-    if tasks:                       # only UMA-style calculators carry a task
-        title += f" ({cfg.task_name})"
-    if effective_model:             # GRACE-style calculators carry a model name
-        title += f" ({effective_model})"
+    title = f"{job['label']} with {comp.get('label', calc['label'])}"
     if biased:
         title += " + PLUMED"
 

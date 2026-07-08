@@ -21,14 +21,13 @@ class NVTConfig:
     structure: Optional[str] = None      # starting structure / trajectory
     restart: Optional[str] = None        # restart trajectory (positions+velocities)
 
-    # registry component selection
+    # registry component selection. Every calculator is a variant family; the
+    # variant selects the family member (MACE-MP, ...), the UMA task head (omol,
+    # ...) or the GRACE model. None -> the calculator's default_variant.
     calculator: str = "uma"              # key in registry.CALCULATORS
-    variant: Optional[str] = None        # calculator variant, e.g. "mace_mp"
+    variant: Optional[str] = None        # variant key, e.g. "mace_mp" / "omol"
     job: str = "nvt"                     # key in registry.JOBS
 
-    task_name: str = "omol"          # UMA task head (unused by other calculators)
-    model: Optional[str] = None      # GRACE foundation model (unused by others);
-    #                                  None -> the calculator's default_model
     # Floating-point precision for MACE (default_dtype) and Orb (precision).
     # None -> use the calculator/variant default from the registry.
     precision: Optional[str] = None

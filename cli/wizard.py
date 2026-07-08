@@ -148,16 +148,9 @@ def _has_variants(s):
     return bool(calc and registry.CALCULATORS[calc].get("variants"))
 
 
-def _has_tasks(s):
-    calc = s.get("calculator")
-    return bool(calc and registry.CALCULATORS[calc].get("tasks"))
-
-
 def _uses_cs(s):
     calc = s.get("calculator")
-    if not calc:
-        return False
-    return registry.uses_charge_spin(calc, s.get("task_name"), s.get("variant"))
+    return bool(calc and registry.uses_charge_spin(calc, s.get("variant")))
 
 
 # --------------------------------------------------------------------------- #
@@ -174,33 +167,6 @@ def _variant_pairs(s):
 
 def _variant_default(s):
     return registry.CALCULATORS[s["calculator"]].get("default_variant")
-
-
-def _task_pairs(s):
-    tasks = registry.CALCULATORS[s["calculator"]]["tasks"]
-    return [(f"{name} - {desc}", name) for name, desc in tasks.items()]
-
-
-def _task_default(s):
-    calc = registry.CALCULATORS[s["calculator"]]
-    tasks = calc["tasks"]
-    cs = calc.get("charge_spin_task")
-    return cs if cs in tasks else next(iter(tasks))
-
-
-def _has_models(s):
-    calc = s.get("calculator")
-    return bool(calc and registry.CALCULATORS[calc].get("models"))
-
-
-def _model_pairs(s):
-    models = registry.CALCULATORS[s["calculator"]]["models"]
-    return [(f"{name} - {desc}", name) for name, desc in models.items()]
-
-
-def _model_default(s):
-    calc = registry.CALCULATORS[s["calculator"]]
-    return calc.get("default_model") or next(iter(calc["models"]))
 
 
 def _md_job_pairs(_s):
@@ -297,7 +263,7 @@ def _build_steps() -> List[Step]:
              applies=_is_md, choices=_md_job_pairs, default="nvt",
              editable=False, label="MD ensemble"),
 
-        # --- MD: calculator + variant/task ----------------------------------
+        # --- MD: calculator + variant ---------------------------------------
         Step("biased", "bool",
              "Add a PLUMED bias (metadynamics, walls, ...)?",
              applies=_is_md, default=False, label="PLUMED bias",
@@ -305,10 +271,11 @@ def _build_steps() -> List[Step]:
         Step("calculator", "select", "Calculator?",
              applies=_is_md, choices=_calc_pairs, default="uma",
              label="Calculator",
-             clears=("variant", "checkpoint", "task_name", "model", "precision",
+             clears=("variant", "checkpoint", "precision",
                      "dispersion", "charge", "multiplicity", "external_field")),
         Step("variant", "select",
-             lambda s: f"{registry.CALCULATORS[s['calculator']]['label']} variant?",
+             lambda s: f"{registry.CALCULATORS[s['calculator']]['label']} "
+                       "variant / model / task?",
              applies=lambda s: _is_md(s) and _has_variants(s),
              choices=_variant_pairs, default=_variant_default,
              label="Variant",
@@ -319,13 +286,6 @@ def _build_steps() -> List[Step]:
                        f"model/checkpoint file",
              applies=lambda s: _is_md(s) and "CHECKPOINT" in _comp_params(s),
              label="Model/checkpoint"),
-        Step("task_name", "select", "Task (property head)?",
-             applies=lambda s: _is_md(s) and _has_tasks(s),
-             choices=_task_pairs, default=_task_default, label="UMA task",
-             clears=("charge", "multiplicity")),
-        Step("model", "select", "Foundation model?",
-             applies=lambda s: _is_md(s) and _has_models(s),
-             choices=_model_pairs, default=_model_default, label="GRACE model"),
         Step("precision", "select", "Model precision?",
              applies=lambda s: _is_md(s) and "PRECISION" in _comp_params(s),
              choices=_precision_pairs, default=_precision_default,
@@ -503,8 +463,6 @@ def _build_nvt(state) -> NVTConfig:
         calculator=state.get("calculator", "uma"),
         variant=state.get("variant"),
         job=state.get("job", "nvt"),
-        task_name=state.get("task_name", "omol"),
-        model=state.get("model"),
         precision=state.get("precision"),
         dispersion=state.get("dispersion", False),
         external_field=state.get("external_field"),
