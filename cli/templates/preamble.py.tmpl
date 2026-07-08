@@ -1,9 +1,48 @@
+import os
+import time
 import numpy as np
 from ase import units
 from ase.io import read, write
 
 # --- parameters (edit me) ---------------------------------------------------
 $PARAMS
+
+# --- helpers ----------------------------------------------------------------
+_AMU_KG = 1.66053906660e-27      # amu -> kg
+_A3_M3 = 1.0e-30                 # Angstrom^3 -> m^3
+
+
+def density_kg_m3(atoms):
+    """Mass density of the (periodic) cell in kg/m^3 (NaN when it has no volume)."""
+    volume = atoms.get_volume()
+    if volume <= 0.0:
+        return float("nan")
+    return (atoms.get_masses().sum() * _AMU_KG) / (volume * _A3_M3)
+
+
+def format_hms(seconds):
+    """Seconds -> 'HH:MM:SS' (or '--:--:--' when unknown)."""
+    if seconds is None or not np.isfinite(seconds):
+        return "--:--:--"
+    seconds = int(round(seconds))
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def backup_if_exists(path):
+    """Rename an existing file to '<name>_backupN<ext>' so it is never clobbered."""
+    if not path or not os.path.exists(path):
+        return None
+    root, ext = os.path.splitext(path)
+    i = 1
+    while os.path.exists(f"{root}_backup{i}{ext}"):
+        i += 1
+    backup = f"{root}_backup{i}{ext}"
+    os.rename(path, backup)
+    print(f"Existing '{path}' found -> renamed to '{backup}'", flush=True)
+    return backup
+
 
 # --- device -----------------------------------------------------------------
 device = DEVICE
@@ -14,7 +53,30 @@ print(f"Using device: {device}", flush=True)
 
 # --- load structure ---------------------------------------------------------
 restart = RESTART is not None
-atoms = read(RESTART if restart else STRUCTURE, index=-1)
+_source = RESTART if restart else STRUCTURE
+if not os.path.isfile(_source):
+    raise SystemExit(f"{'Restart' if restart else 'Structure'} file not found: "
+                     f"{_source}")
+# Always take the LAST frame. On a restart both positions and velocities carry
+# over; on a fresh start from a multi-frame file only the geometry is used.
+atoms = read(_source, index=-1)
+if not restart:
+    try:
+        read(_source, index=1)       # succeeds only if the file has >= 2 frames
+        print(f"Structure file '{_source}' has multiple frames: using its LAST "
+              f"frame (fresh velocities will be drawn).", flush=True)
+    except (StopIteration, IndexError):
+        pass
 if CELL is not None:
     atoms.set_cell(CELL)
 atoms.set_pbc(PBC)
+
+periodic = bool(np.any(atoms.pbc))
+if periodic and atoms.cell.rank < 3:
+    raise SystemExit("System is periodic but the cell is not fully 3D. Set CELL.")
+print(f"{len(atoms)} atoms | pbc={tuple(atoms.pbc)} | "
+      f"cell lengths = {atoms.cell.lengths()}", flush=True)
+if periodic:
+    print(f"initial density = {density_kg_m3(atoms):.2f} kg/m3", flush=True)
+else:
+    print("WARNING: system is not periodic; density will be NaN.", flush=True)

@@ -1,5 +1,6 @@
 
 # --- wrap every frame into the primary cell ----------------------------------
+backup_if_exists(WRAPPED)
 frames = read(TRAJ, index=":")
 for _f in frames:
     _f.wrap()

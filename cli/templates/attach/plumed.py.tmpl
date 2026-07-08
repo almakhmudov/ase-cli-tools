@@ -2,6 +2,33 @@
 # --- attach calculator (PLUMED bias on top of the MLIP) ---------------------
 from ase.calculators.plumed import Plumed
 
+
+def _plumed_output_files(lines):
+    """Filenames referenced by FILE=... in the PLUMED input (order-preserving)."""
+    files = []
+    for line in lines:
+        for tok in line.split():
+            if tok.upper().startswith("FILE="):
+                name = tok.split("=", 1)[1].strip()
+                if name and name not in files:
+                    files.append(name)
+    return files
+
+
+# On a biased restart the previous PLUMED output files must be present: a
+# metadynamics restart reads HILLS to rebuild the bias. Abort early if missing.
+if restart:
+    _referenced = _plumed_output_files(PLUMED_INPUT) or ["HILLS", "COLVAR"]
+    _missing = [f for f in _referenced if not os.path.isfile(f)]
+    if _missing:
+        raise SystemExit(
+            "Biased restart aborted: required PLUMED file(s) not found in the "
+            "working directory: " + ", ".join(_missing) + ". A metadynamics "
+            "restart needs the previous HILLS (and COLVAR) files. Run from the "
+            "original directory, or copy them here.")
+    print(f"Biased restart: found PLUMED file(s) {', '.join(_referenced)}.",
+          flush=True)
+
 atoms.calc = Plumed(
     calc=base_calc,
     input=PLUMED_INPUT,
@@ -11,5 +38,11 @@ atoms.calc = Plumed(
     log=PLUMED_LOG,
     restart=restart,
 )
-if restart and PREV_STEPS is not None:
-    atoms.calc.istep = PREV_STEPS
+if restart:
+    if PREV_STEPS is not None:
+        atoms.calc.istep = PREV_STEPS
+        print(f"Restart: PLUMED istep set to {PREV_STEPS}.", flush=True)
+    else:
+        print("WARNING: biased restart without a previous step count; PLUMED "
+              "istep stays 0, so metadynamics time will not be continuous with "
+              "the previous run.", flush=True)

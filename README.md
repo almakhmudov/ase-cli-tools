@@ -69,10 +69,23 @@ ase-cli-tools
 ```
 
 You pick the job category, the ensemble, whether to bias it, the calculator and
-its task (property head) from menus, then type the remaining parameters. Charge
-and spin are only asked for the molecular `omol` task, and the Nose-Hoover
-thermostat parameters are behind an optional step so you can leave them at their
-defaults. The tool writes the script and offers to run it.
+its task (property head) from menus, then type the remaining parameters —
+periodicity, cell, temperature, timestep, steps, recording interval and so on.
+Every typed prompt shows its default in parentheses and accepts a blank to use
+it. Charge and spin are only asked for the molecular `omol` task (and
+MACE-POLAR), and the Nose-Hoover thermostat parameters are behind an optional
+step so you can leave them at their defaults. The wizard now exposes the same
+options as the flags, so nothing is reachable by flag alone.
+
+You are never locked into a linear path. At **every** step you can go **back** to
+change the previous answer — including the job type — or **quit** the whole
+process: pick `↩ go back` / `✕ quit` on a menu, or type `<` / `!q` at a typed
+prompt (Esc also quits). When all the questions are answered, a **review** screen
+lists every field and its value; pick any one to change it (the job type aside,
+since it decides which questions exist) and you return to the review. Changing a
+structural choice — say the calculator — re-asks only the answers that depend on
+it. When it looks right, choose *Write the script now*, and the tool writes it
+and offers to run it.
 
 ### Flag-driven (scriptable)
 
@@ -82,7 +95,7 @@ ase-cli-tools md run --job nvt -c uma.pt -s mixture.xyz --cell "20 20 20" \
     --charge 0 --multiplicity 2 -T 498.15 -n 10000 --wrap
 
 # the same job, biased: --plumed turns on biasing (input embedded in the script)
-ase-cli-tools md run --job nvt -p examples/plumed.dat -c uma.pt \
+ase-cli-tools md run --job nvt -p plumed.dat -c uma.pt \
     -s mixture.xyz --cell "20 20 20" -T 498.15 -n 500000
 
 # a non-molecular UMA task (no charge/spin): choose the property head with --task

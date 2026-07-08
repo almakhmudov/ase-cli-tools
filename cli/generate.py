@@ -40,7 +40,12 @@ def _parse_pbc(value: str):
 def _parse_cell(value: Optional[str]):
     if not value:
         return None
-    return [float(x) for x in value.replace(",", " ").split()]
+    nums = [float(x) for x in value.replace(",", " ").split()]
+    # 3 (a b c) and 6 (a b c al be ga) are accepted by Cell.new directly; a flat
+    # 9-value list is not, so fold it into a 3x3 (row-major) for atoms.set_cell.
+    if len(nums) == 9:
+        return [nums[0:3], nums[3:6], nums[6:9]]
+    return nums
 
 
 def _parse_vec(value: Optional[str]):

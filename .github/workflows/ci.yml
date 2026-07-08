@@ -43,9 +43,13 @@ jobs:
       - name: Generated scripts are valid Python
         # Assemble each script variant to stdout, write it out, and py_compile it.
         run: |
+          printf 'UNITS LENGTH=A TIME=fs ENERGY=eV\nd: DISTANCE ATOMS=1,2\nMETAD ARG=d PACE=500 HEIGHT=0.02 SIGMA=0.2 BIASFACTOR=10 GRID_MIN=0 GRID_MAX=15 GRID_BIN=300 FILE=HILLS\nPRINT ARG=d FILE=COLVAR STRIDE=50\n' > /tmp/plumed.dat
           python -m cli.app md run --job nvt -c model.pt -s in.xyz \
             --cell "20 20 20" --stdout > /tmp/nvt.py
           python -m cli.app md run --job nvt -c model.pt -s in.xyz \
-            --cell "20 20 20" --plumed examples/plumed.dat --stdout > /tmp/biased.py
+            --cell "20 20 20" --plumed /tmp/plumed.dat --stdout > /tmp/biased.py
+          python -m cli.app md run --job nvt --calculator mace --variant mace_mp \
+            -c mace.model -s in.xyz --cell "20 20 20" --dtype float32 \
+            --dispersion True --traj-format xyz --wrap --stdout > /tmp/mace.py
           python -m cli.app postprocess wrap in.traj --stdout > /tmp/wrap.py
-          python -m py_compile /tmp/nvt.py /tmp/biased.py /tmp/wrap.py
+          python -m py_compile /tmp/nvt.py /tmp/biased.py /tmp/mace.py /tmp/wrap.py

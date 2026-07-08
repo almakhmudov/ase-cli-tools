@@ -9,10 +9,16 @@ except ImportError:  # ASE < 3.29
     )
 
 if restart and np.any(atoms.get_momenta()):
-    print("Restart: carrying over positions and velocities.", flush=True)
+    print(f"Restart: carrying over positions and velocities "
+          f"(T = {atoms.get_temperature():.1f} K).", flush=True)
 else:
+    if restart:
+        print("WARNING: restart file has no velocities; drawing fresh "
+              "Maxwell-Boltzmann momenta instead.", flush=True)
     set_momenta(atoms, temperature_K=TEMPERATURE, rng=np.random.default_rng(SEED))
-    Stationary(atoms)
+    Stationary(atoms)                # remove net centre-of-mass translation
+    if not periodic:
+        ZeroRotation(atoms)          # only meaningful for an isolated molecule
 
 # --- Nose-Hoover chain NVT ---------------------------------------------------
 from ase.md.nose_hoover_chain import NoseHooverChainNVT
@@ -20,6 +26,8 @@ from ase.io.trajectory import Trajectory
 from ase.calculators.singlepoint import SinglePointCalculator
 
 tdamp = TDAMP if TDAMP is not None else max(100.0 * TIMESTEP, 20.0)
+print(f"Nose-Hoover: T={TEMPERATURE} K, dt={TIMESTEP} fs, tdamp={tdamp} fs, "
+      f"tchain={TCHAIN}, tloop={TLOOP}", flush=True)
 dyn = NoseHooverChainNVT(
     atoms,
     timestep=TIMESTEP * units.fs,
@@ -28,23 +36,71 @@ dyn = NoseHooverChainNVT(
     tchain=TCHAIN,
     tloop=TLOOP,
 )
-$TRAJ_WRITER
-logf = open(LOG, "w")
-logf.write("# frame  time_fs  E_pot_eV  E_kin_eV  E_tot_eV  T_K\n")
-_frame = [0]
-def _log():
-    epot = atoms.get_potential_energy()
-    ekin = atoms.get_kinetic_energy()
-    logf.write(f"{_frame[0]:8d} {dyn.get_number_of_steps() * TIMESTEP:12.2f} "
-               f"{epot:16.6f} {ekin:16.6f} {epot + ekin:16.6f} "
-               f"{atoms.get_temperature():8.2f}\n")
-    logf.flush()
-    _frame[0] += 1
-dyn.attach(_log, interval=TRAJ_INTERVAL)
 
+
+# --- per-frame reporter (log file + stdout, with density and ETA) ------------
+class MDReporter:
+    """Write one log line per frame to a file and mirror it on stdout.
+
+    Columns: frame, time (fs), E_pot, E_kin, E_tot (eV), density (kg/m^3),
+    temperature (K) and the predicted wall-clock time remaining.
+    """
+
+    HEADER = ("# {:>8s} {:>14s} {:>18s} {:>18s} {:>18s} {:>14s} {:>10s} {:>12s}"
+              .format("frame", "time_fs", "E_pot_eV", "E_kin_eV", "E_tot_eV",
+                      "rho_kg_m3", "T_K", "ETA_hh:mm:ss"))
+
+    def __init__(self, dyn, atoms, log_path, dt_fs, total_steps):
+        self.dyn = dyn
+        self.atoms = atoms
+        self.dt_fs = dt_fs
+        self.total_steps = total_steps
+        self.frame = 0
+        self.t_start = None
+        self.fh = open(log_path, "w")
+        self.fh.write(self.HEADER + "\n")
+        self.fh.flush()
+
+    def __call__(self):
+        if self.t_start is None:
+            self.t_start = time.time()
+        step = self.dyn.get_number_of_steps()
+        epot = self.atoms.get_potential_energy()
+        ekin = self.atoms.get_kinetic_energy()
+        elapsed = time.time() - self.t_start
+        eta = (elapsed / step) * max(self.total_steps - step, 0) if step > 0 else None
+        line = ("{:>10d} {:>14.2f} {:>18.6f} {:>18.6f} {:>18.6f} {:>14.3f} "
+                "{:>10.2f} {:>12s}").format(
+            self.frame, step * self.dt_fs, epot, ekin, epot + ekin,
+            density_kg_m3(self.atoms), self.atoms.get_temperature(),
+            format_hms(eta))
+        self.fh.write(line + "\n")
+        self.fh.flush()
+        if self.frame == 0:
+            print(self.HEADER, flush=True)
+        print(line, flush=True)
+        self.frame += 1
+
+    def close(self):
+        self.fh.close()
+
+
+# --- outputs (back up any previous run's files first) ------------------------
+for _out in (TRAJ, LOG, LAST_FRAME):
+    backup_if_exists(_out)
+$TRAJ_WRITER
+reporter = MDReporter(dyn, atoms, LOG, TIMESTEP, NSTEPS)
+dyn.attach(reporter, interval=TRAJ_INTERVAL)
+
+# --- run ---------------------------------------------------------------------
+# Attached observers fire once at step 0, so the initial state is frame 0.
+_t0 = time.time()
 dyn.run(NSTEPS)
+_wall = time.time() - _t0
 _close_traj()
-logf.close()
+reporter.close()
+print(f"[nvt] {NSTEPS} steps in {_wall:.1f} s "
+      f"({1000 * _wall / max(NSTEPS, 1):.2f} ms/step) -> {TRAJ}", flush=True)
 
 # --- final frame (extxyz) ----------------------------------------------------
 out = atoms.copy()
@@ -52,4 +108,4 @@ out.arrays.pop("momenta", None)
 out.info = {"step": NSTEPS, "time_fs": NSTEPS * TIMESTEP}
 out.calc = SinglePointCalculator(out, energy=atoms.get_potential_energy())
 write(LAST_FRAME, out, format="extxyz")
-print(f"Done. Wrote {TRAJ}, {LOG}, {LAST_FRAME}.", flush=True)
+print(f"[nvt] wrote final frame -> {LAST_FRAME}", flush=True)
