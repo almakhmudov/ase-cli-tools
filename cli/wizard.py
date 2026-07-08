@@ -188,6 +188,21 @@ def _task_default(s):
     return cs if cs in tasks else next(iter(tasks))
 
 
+def _has_models(s):
+    calc = s.get("calculator")
+    return bool(calc and registry.CALCULATORS[calc].get("models"))
+
+
+def _model_pairs(s):
+    models = registry.CALCULATORS[s["calculator"]]["models"]
+    return [(f"{name} - {desc}", name) for name, desc in models.items()]
+
+
+def _model_default(s):
+    calc = registry.CALCULATORS[s["calculator"]]
+    return calc.get("default_model") or next(iter(calc["models"]))
+
+
 def _md_job_pairs(_s):
     return [(spec["label"], name) for name, spec in registry.JOBS.items()
             if spec.get("category") == "md"]
@@ -290,7 +305,7 @@ def _build_steps() -> List[Step]:
         Step("calculator", "select", "Calculator?",
              applies=_is_md, choices=_calc_pairs, default="uma",
              label="Calculator",
-             clears=("variant", "checkpoint", "task_name", "precision",
+             clears=("variant", "checkpoint", "task_name", "model", "precision",
                      "dispersion", "charge", "multiplicity", "external_field")),
         Step("variant", "select",
              lambda s: f"{registry.CALCULATORS[s['calculator']]['label']} variant?",
@@ -308,6 +323,9 @@ def _build_steps() -> List[Step]:
              applies=lambda s: _is_md(s) and _has_tasks(s),
              choices=_task_pairs, default=_task_default, label="UMA task",
              clears=("charge", "multiplicity")),
+        Step("model", "select", "Foundation model?",
+             applies=lambda s: _is_md(s) and _has_models(s),
+             choices=_model_pairs, default=_model_default, label="GRACE model"),
         Step("precision", "select", "Model precision?",
              applies=lambda s: _is_md(s) and "PRECISION" in _comp_params(s),
              choices=_precision_pairs, default=_precision_default,
@@ -486,6 +504,7 @@ def _build_nvt(state) -> NVTConfig:
         variant=state.get("variant"),
         job=state.get("job", "nvt"),
         task_name=state.get("task_name", "omol"),
+        model=state.get("model"),
         precision=state.get("precision"),
         dispersion=state.get("dispersion", False),
         external_field=state.get("external_field"),

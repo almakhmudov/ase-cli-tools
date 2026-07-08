@@ -105,6 +105,21 @@ CALCULATORS = {
         },
         "default_variant": "orb_v3_omat",
     },
+    "grace": {
+        "label": "GRACE (tensorpotential)",
+        "template": "calculators/grace.py.tmpl",
+        "params": ["MODEL"],
+        # GRACE foundation models, selected by name (no checkpoint file needed;
+        # weights download on first use). Runs on TensorFlow, not PyTorch.
+        "models": {
+            "GRACE-1L-OMAT-medium-ft-E": "1-layer OMAT, medium, fine-tuned (E)",
+            "GRACE-1L-OMAT-large-ft-E":  "1-layer OMAT, large, fine-tuned (E)",
+            "GRACE-2L-OMAT-medium-ft-E": "2-layer OMAT, medium, fine-tuned (E)",
+            "GRACE-2L-OMAT-large-ft-E":  "2-layer OMAT, large, fine-tuned (E)",
+            "GRACE-3L-OMAT-large":       "3-layer OMAT, large",
+        },
+        "default_model": "GRACE-1L-OMAT-medium-ft-E",
+    },
 }
 
 

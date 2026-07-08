@@ -14,10 +14,11 @@ The building blocks are predefined and tested, and assembled from modular
 skeletons — in the spirit of ASE's own swappable calculators and dynamics. Now
 the toolkit covers **NVT molecular dynamics** with the **UMA**
 (from [FairChem](https://github.com/facebookresearch/fairchem)), **MACE**
-(from [ACEsuit](https://github.com/ACEsuit/mace)) and **Orb**
-(from [orb-models](https://github.com/orbital-materials/orb-models)) potentials,
-with optional PLUMED biasing; more calculators, ensembles and job types are on
-the roadmap.
+(from [ACEsuit](https://github.com/ACEsuit/mace)), **Orb**
+(from [orb-models](https://github.com/orbital-materials/orb-models)) and **GRACE**
+(from [tensorpotential](https://github.com/ICAMS/grace-tensorpotential))
+potentials, with optional PLUMED biasing; more calculators, ensembles and job
+types are on the roadmap.
 
 > **Status:** early prototype. Interfaces may change.
 
@@ -85,6 +86,17 @@ weights are downloaded by name on first use, so no checkpoint file is required:
 
 ```bash
 pip install orb-models
+```
+
+### GRACE backend (optional)
+
+The GRACE calculator (`--calculator grace`) needs `tensorpotential` (which pulls
+in TensorFlow). Weights download by name on first use, so no checkpoint file is
+required:
+
+```bash
+pip install tensorpotential
+# GPU TensorFlow (optional): pip install "tensorflow[and-cuda]<2.20"
 ```
 
 ### PLUMED biasing (optional)
@@ -162,6 +174,10 @@ ase-cli-tools md run --job nvt --calculator orb -s crystal.cif --cell "10 10 10"
 ase-cli-tools md run --job nvt --calculator orb --variant orbmol_v2 \
     -s molecule.xyz --charge 0 --multiplicity 1 --precision float32-high -T 298.15 -n 10000
 
+# GRACE (no checkpoint file needed): pick a foundation model with --model
+ase-cli-tools md run --job nvt --calculator grace --model GRACE-2L-OMAT-large-ft-E \
+    -s crystal.cif --cell "10 10 10" -T 300 -n 20000
+
 # wrap post-processing
 ase-cli-tools postprocess wrap equil.traj
 
@@ -183,7 +199,7 @@ least 20 fs), `--tchain` (chain length) and `--tloop` (inner loops). `--seed`
 sets the RNG seed for the initial Maxwell-Boltzmann velocities (default `42`) so
 a fresh-start run is reproducible.
 
-`--calculator` chooses the backend (`uma`, `mace`, `orb`), with `-c`/`--checkpoint`
+`--calculator` chooses the backend (`uma`, `mace`, `orb`, `grace`), with `-c`/`--checkpoint`
 pointing at that backend's model file where one is needed. For MACE, `--variant`
 selects the family member: `mace_mp` (materials, the default; `--dispersion True`
 adds a D3 correction), `mace_off` (organic molecules) and `mace_polar` (uses
@@ -191,6 +207,10 @@ adds a D3 correction), `mace_off` (organic molecules) and `mace_polar` (uses
 Orb, `--variant` is `orb_v3_omat` (Orb-v3-conservative-inf-omat, the default;
 `--dispersion True` adds a D3 correction) or `orbmol_v2` (OrbMol-v2, which uses
 `--charge`/`--multiplicity`). Orb needs **no checkpoint** — weights load by name.
+For GRACE, `--model` picks a foundation model (`GRACE-1L-OMAT-medium-ft-E` — the
+default — `GRACE-1L-OMAT-large-ft-E`, `GRACE-2L-OMAT-medium-ft-E`,
+`GRACE-2L-OMAT-large-ft-E` or `GRACE-3L-OMAT-large`); it also needs **no
+checkpoint** and runs on TensorFlow.
 `--task` applies to UMA only. `--precision` sets the floating-point precision for
 both MACE (`float32`/`float64`, default `float64`) and Orb (`float32-highest` —
 the recommended default — `float32-high` or `float64`); omit it to take the
@@ -218,10 +238,11 @@ Calculators:
 
 - [x] MACE
 - [x] Orb
-- [ ] GRACE
+- [x] GRACE
 - [ ] ORCA
 - [ ] CP2K
 - [ ] Quantum ESPRESSO
+- [ ] VASP
 
 Jobs / ensembles:
 

@@ -87,6 +87,7 @@ def _param_values(cfg: NVTConfig, traj_path: str, wrapped_path: str) -> Dict[str
         "MULTIPLICITY": str(cfg.multiplicity),
         "CHECKPOINT": repr(cfg.checkpoint),
         "TASK_NAME": repr(cfg.task_name),
+        "MODEL": repr(cfg.model),
         "PRECISION": repr(cfg.precision),
         "DISPERSION": str(cfg.dispersion),
         "EXTERNAL_FIELD": repr(_parse_vec(cfg.external_field)),
@@ -165,6 +166,17 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
         raise KeyError(f"unknown task {cfg.task_name!r} for calculator "
                        f"{cfg.calculator!r}; available: {sorted(tasks)}")
 
+    # Model selection (GRACE): fall back to the calculator's default_model when
+    # unset, then validate against the offered set.
+    models = calc.get("models")
+    effective_model = None
+    if models:
+        effective_model = cfg.model or calc.get("default_model") or next(iter(models))
+        if effective_model not in models:
+            raise KeyError(f"unknown model {effective_model!r} for calculator "
+                           f"{cfg.calculator!r}; available: {sorted(models)}")
+        values["MODEL"] = repr(effective_model)
+
     # UMA sets charge/spin via a template placeholder that depends on the task
     # ('omol'). Variants that use charge/spin (MACE-POLAR) bake those lines into
     # their own skeleton and list the params directly, so no injection is needed.
@@ -196,6 +208,8 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     title = f"{job['label']} with {calc_label}"
     if tasks:                       # only UMA-style calculators carry a task
         title += f" ({cfg.task_name})"
+    if effective_model:             # GRACE-style calculators carry a model name
+        title += f" ({effective_model})"
     if biased:
         title += " + PLUMED"
 

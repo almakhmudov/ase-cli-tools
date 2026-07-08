@@ -82,6 +82,12 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
         raise typer.BadParameter(f"unknown task {cfg.task_name!r} for "
                                  f"{cfg.calculator!r}; choose from {list(tasks)}.")
 
+    # Validate --model against the calculator's offered set (GRACE).
+    models = calc_spec.get("models")
+    if models and cfg.model is not None and cfg.model not in models:
+        raise typer.BadParameter(f"unknown model {cfg.model!r} for "
+                                 f"{cfg.calculator!r}; choose from {list(models)}.")
+
     # Validate --precision against the chosen variant's allowed values.
     pspec = comp.get("precision")
     if pspec and cfg.precision is not None and cfg.precision not in pspec["choices"]:
@@ -119,6 +125,7 @@ _MD_JOBS = [name for name, spec in registry.JOBS.items()
 _UMA_TASKS = list(registry.CALCULATORS["uma"].get("tasks", {}))
 _MACE_VARIANTS = list(registry.CALCULATORS["mace"].get("variants", {}))
 _ORB_VARIANTS = list(registry.CALCULATORS["orb"].get("variants", {}))
+_GRACE_MODELS = list(registry.CALCULATORS["grace"].get("models", {}))
 
 
 @md_app.command("run")
@@ -135,6 +142,10 @@ def md_run(
     task: str = typer.Option("omol", "--task", "-t",
                              help=f"UMA task/property head: {_UMA_TASKS}. Only "
                                   "'omol' uses --charge and --multiplicity."),
+    model: Optional[str] = typer.Option(None, "--model",
+                                        help=f"GRACE foundation model: "
+                                             f"{_GRACE_MODELS} (default: "
+                                             "GRACE-1L-OMAT-medium-ft-E)."),
     precision: Optional[str] = typer.Option(
         None, "--precision",
         help="Floating-point precision. MACE: float32 | float64 (default "
@@ -183,7 +194,7 @@ def md_run(
         raise typer.BadParameter(f"unknown job {job!r}; choose from {_MD_JOBS}.")
     cfg = NVTConfig(
         checkpoint=checkpoint, calculator=calculator, variant=variant,
-        job=job, task_name=task,
+        job=job, task_name=task, model=model,
         precision=precision,
         dispersion=_parse_bool(dispersion, "--dispersion"),
         external_field=external_field,

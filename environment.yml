@@ -49,3 +49,6 @@ dependencies:
       #   pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git
       # Orb calculators (--calculator orb); weights download by name on first use.
       # - orb-models
+      # GRACE calculator (--calculator grace); pulls in TensorFlow, weights
+      # download by name on first use.
+      # - tensorpotential

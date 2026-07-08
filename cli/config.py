@@ -27,6 +27,8 @@ class NVTConfig:
     job: str = "nvt"                     # key in registry.JOBS
 
     task_name: str = "omol"          # UMA task head (unused by other calculators)
+    model: Optional[str] = None      # GRACE foundation model (unused by others);
+    #                                  None -> the calculator's default_model
     # Floating-point precision for MACE (default_dtype) and Orb (precision).
     # None -> use the calculator/variant default from the registry.
     precision: Optional[str] = None

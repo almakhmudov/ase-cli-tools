@@ -47,8 +47,17 @@ def backup_if_exists(path):
 # --- device -----------------------------------------------------------------
 device = DEVICE
 if device == "auto":
-    import torch
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Torch-based backends (UMA, MACE, Orb) decide the device from torch;
+    # TensorFlow-based ones (GRACE) from tf. Fall back to CPU if neither is here.
+    try:
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        try:
+            import tensorflow as tf
+            device = "cuda" if tf.config.list_physical_devices("GPU") else "cpu"
+        except ImportError:
+            device = "cpu"
 print(f"Using device: {device}", flush=True)
 
 # --- load structure ---------------------------------------------------------

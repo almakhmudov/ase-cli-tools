@@ -1,0 +1,7 @@
+
+# --- calculator: GRACE (tensorpotential) ------------------------------------
+from tensorpotential.calculator.foundation_models import grace_fm
+
+# GRACE runs on TensorFlow, which uses the GPU automatically when one is visible;
+# the model weights download by name on first use.
+base_calc = grace_fm(MODEL)

@@ -23,6 +23,10 @@ torch==2.8.0
 # no checkpoint file is required.
 # orb-models
 
+# GRACE calculator (--calculator grace). Pulls in TensorFlow; weights download
+# by name on first use. For GPU TF: pip install "tensorflow[and-cuda]<2.20"
+# tensorpotential
+
 # PLUMED Python interface (needed only for biased runs via --plumed).
 # Prefer conda-forge (py-plumed); the pip package requires a working PLUMED
 # library/kernel to be present on the system.

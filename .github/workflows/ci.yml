@@ -56,6 +56,9 @@ jobs:
           python -m cli.app md run --job nvt --calculator orb --variant orbmol_v2 \
             -s mol.xyz --charge 0 --multiplicity 1 --precision float32-high \
             --stdout > /tmp/orbmol.py
+          python -m cli.app md run --job nvt --calculator grace \
+            --model GRACE-2L-OMAT-large-ft-E -s in.xyz --cell "20 20 20" \
+            --stdout > /tmp/grace.py
           python -m cli.app postprocess wrap in.traj --stdout > /tmp/wrap.py
           python -m py_compile /tmp/nvt.py /tmp/biased.py /tmp/mace.py /tmp/orb.py \
-            /tmp/orbmol.py /tmp/wrap.py
+            /tmp/orbmol.py /tmp/grace.py /tmp/wrap.py
