@@ -47,3 +47,5 @@ dependencies:
       # the README:
       #   git clone https://github.com/ACEsuit/mace.git && cd mace && pip install .
       #   pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git
+      # Orb calculators (--calculator orb); weights download by name on first use.
+      # - orb-models

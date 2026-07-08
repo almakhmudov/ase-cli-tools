@@ -13,7 +13,8 @@ your work stays reproducible.
 The building blocks are predefined and tested, and assembled from modular
 skeletons — in the spirit of ASE's own swappable calculators and dynamics. Now
 the toolkit covers **NVT molecular dynamics** with the **UMA**
-(from [FairChem](https://github.com/facebookresearch/fairchem)) and **MACE**
+(from [FairChem](https://github.com/facebookresearch/fairchem)), **MACE** and
+**Orb** (from [orb-models](https://github.com/orbital-materials/orb-models))
 potentials, with optional PLUMED biasing; more calculators, ensembles and job
 types are on the roadmap.
 
@@ -58,6 +59,15 @@ cd mace && git checkout main && pip install .
 pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git   # MACE-POLAR only
 ```
 
+### Orb backend (optional)
+
+The Orb calculators (`--calculator orb`) need the `orb-models` package. Model
+weights are downloaded by name on first use, so no checkpoint file is required:
+
+```bash
+pip install orb-models
+```
+
 ## Usage
 
 ### Interactive (arrow keys)
@@ -68,14 +78,15 @@ Just run the command with no arguments and follow the prompts:
 ase-cli-tools
 ```
 
-You pick the job category, the ensemble, whether to bias it, the calculator and
-its task (property head) from menus, then type the remaining parameters —
-periodicity, cell, temperature, timestep, steps, recording interval and so on.
-Every typed prompt shows its default in parentheses and accepts a blank to use
-it. Charge and spin are only asked for the molecular `omol` task (and
-MACE-POLAR), and the Nose-Hoover thermostat parameters are behind an optional
-step so you can leave them at their defaults. The wizard now exposes the same
-options as the flags, so nothing is reachable by flag alone.
+You pick the job category, the ensemble, whether to bias it, and the calculator
+(and, where it applies, a variant, a UMA task, and the precision) from menus,
+then type the remaining parameters — periodicity, cell, temperature, timestep,
+steps, recording interval and so on. Every typed prompt shows its default in
+parentheses and accepts a blank to use it. Charge and spin are only asked when
+the calculator uses them (UMA's `omol` task, MACE-POLAR and OrbMol-v2), and the
+Nose-Hoover thermostat parameters are behind an optional step so you can leave
+them at their defaults. The wizard exposes the same options as the flags, so
+nothing is reachable by flag alone.
 
 You are never locked into a linear path. At **every** step you can go **back** to
 change the previous answer — including the job type — or **quit** the whole
@@ -108,12 +119,20 @@ ase-cli-tools md run --job nvt -c uma.pt -s mixture.xyz --cell "20 20 20" \
 
 # MACE instead of UMA: pick a variant with --variant (default mace_mp)
 ase-cli-tools md run --job nvt --calculator mace --variant mace_mp -c mace.model \
-    -s mixture.xyz --cell "20 20 20" --dtype float32 --dispersion True -T 298.15 -n 10000
+    -s mixture.xyz --cell "20 20 20" --precision float32 --dispersion True -T 298.15 -n 10000
 
 # MACE-POLAR: uses charge/spin and an optional external field
 ase-cli-tools md run --job nvt --calculator mace --variant mace_polar -c polar.model \
     -s mixture.xyz --cell "20 20 20" --charge 0 --multiplicity 1 \
     --external-field "0 0 0.01" -T 298.15 -n 10000
+
+# Orb (no checkpoint file needed): default variant orb_v3_omat, D3 optional
+ase-cli-tools md run --job nvt --calculator orb -s crystal.cif --cell "10 10 10" \
+    --precision float32-highest --dispersion True -T 300 -n 20000
+
+# OrbMol-v2: uses charge/spin (like MACE-POLAR / UMA omol)
+ase-cli-tools md run --job nvt --calculator orb --variant orbmol_v2 \
+    -s molecule.xyz --charge 0 --multiplicity 1 --precision float32-high -T 298.15 -n 10000
 
 # wrap post-processing
 ase-cli-tools postprocess wrap equil.traj
@@ -134,14 +153,20 @@ ignored for the other tasks. The Nose-Hoover thermostat is tunable via
 `--tdamp` (coupling time in fs; omit for the auto value of `100*timestep`, at
 least 20 fs), `--tchain` (chain length) and `--tloop` (inner loops).
 
-`--calculator` chooses the backend (`uma`, `mace`), with `-c`/`--checkpoint`
-pointing at that backend's model file. For MACE, `--variant` selects the family
-member: `mace_mp` (materials, the default; `--dispersion True` adds a D3
-correction), `mace_off` (organic molecules) and `mace_polar` (uses
-`--charge`/`--multiplicity` and an optional `--external-field "Ex Ey Ez"`).
-`--task` applies to UMA only, and `--dtype` (`float32`/`float64`) to MACE. Each
-backend or variant is a small template plus one registry entry, so biasing, the
-thermostat and the output options work the same across all of them.
+`--calculator` chooses the backend (`uma`, `mace`, `orb`), with `-c`/`--checkpoint`
+pointing at that backend's model file where one is needed. For MACE, `--variant`
+selects the family member: `mace_mp` (materials, the default; `--dispersion True`
+adds a D3 correction), `mace_off` (organic molecules) and `mace_polar` (uses
+`--charge`/`--multiplicity` and an optional `--external-field "Ex Ey Ez"`). For
+Orb, `--variant` is `orb_v3_omat` (Orb-v3-conservative-inf-omat, the default;
+`--dispersion True` adds a D3 correction) or `orbmol_v2` (OrbMol-v2, which uses
+`--charge`/`--multiplicity`). Orb needs **no checkpoint** — weights load by name.
+`--task` applies to UMA only. `--precision` sets the floating-point precision for
+both MACE (`float32`/`float64`, default `float64`) and Orb (`float32-highest` —
+the recommended default — `float32-high` or `float64`); omit it to take the
+calculator's default. Each backend or variant is a small template plus one
+registry entry, so biasing, the thermostat and the output options work the same across
+all of them.
 
 Command layout:
 
@@ -162,6 +187,7 @@ applies uniformly to any ensemble as they are added.
 Calculators:
 
 - [x] MACE
+- [x] Orb
 - [ ] GRACE
 - [ ] ORCA
 - [ ] CP2K

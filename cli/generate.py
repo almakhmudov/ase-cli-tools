@@ -87,7 +87,7 @@ def _param_values(cfg: NVTConfig, traj_path: str, wrapped_path: str) -> Dict[str
         "MULTIPLICITY": str(cfg.multiplicity),
         "CHECKPOINT": repr(cfg.checkpoint),
         "TASK_NAME": repr(cfg.task_name),
-        "DTYPE": repr(cfg.dtype),
+        "PRECISION": repr(cfg.precision),
         "DISPERSION": str(cfg.dispersion),
         "EXTERNAL_FIELD": repr(_parse_vec(cfg.external_field)),
         "TEMPERATURE": str(cfg.temperature),
@@ -152,6 +152,12 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     # Resolve the calculator variant (MACE) to its component skeleton; for a
     # variant-less calculator (UMA) this returns the calculator spec itself.
     variant_name, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
+
+    # Precision: fall back to the variant's default when the config leaves it
+    # unset (None). Maps to MACE's default_dtype / Orb's precision in templates.
+    pspec = comp.get("precision")
+    if pspec:
+        values["PRECISION"] = repr(cfg.precision or pspec["default"])
 
     # Validate the calculator task, if the calculator declares a task set.
     tasks = calc.get("tasks")

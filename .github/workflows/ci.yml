@@ -49,7 +49,13 @@ jobs:
           python -m cli.app md run --job nvt -c model.pt -s in.xyz \
             --cell "20 20 20" --plumed /tmp/plumed.dat --stdout > /tmp/biased.py
           python -m cli.app md run --job nvt --calculator mace --variant mace_mp \
-            -c mace.model -s in.xyz --cell "20 20 20" --dtype float32 \
+            -c mace.model -s in.xyz --cell "20 20 20" --precision float32 \
             --dispersion True --traj-format xyz --wrap --stdout > /tmp/mace.py
+          python -m cli.app md run --job nvt --calculator orb --variant orb_v3_omat \
+            -s in.xyz --cell "20 20 20" --dispersion True --stdout > /tmp/orb.py
+          python -m cli.app md run --job nvt --calculator orb --variant orbmol_v2 \
+            -s mol.xyz --charge 0 --multiplicity 1 --precision float32-high \
+            --stdout > /tmp/orbmol.py
           python -m cli.app postprocess wrap in.traj --stdout > /tmp/wrap.py
-          python -m py_compile /tmp/nvt.py /tmp/biased.py /tmp/mace.py /tmp/wrap.py
+          python -m py_compile /tmp/nvt.py /tmp/biased.py /tmp/mace.py /tmp/orb.py \
+            /tmp/orbmol.py /tmp/wrap.py

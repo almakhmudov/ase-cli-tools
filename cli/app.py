@@ -82,12 +82,19 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
         raise typer.BadParameter(f"unknown task {cfg.task_name!r} for "
                                  f"{cfg.calculator!r}; choose from {list(tasks)}.")
 
+    # Validate --precision against the chosen variant's allowed values.
+    pspec = comp.get("precision")
+    if pspec and cfg.precision is not None and cfg.precision not in pspec["choices"]:
+        raise typer.BadParameter(
+            f"unknown precision {cfg.precision!r} for "
+            f"{cfg.variant or cfg.calculator!r}; choose from {pspec['choices']}.")
+
     # Warn when charge/multiplicity are set but the chosen calculator/task/
     # variant does not use them.
     if (not registry.uses_charge_spin(cfg.calculator, cfg.task_name, cfg.variant)
             and (cfg.charge != 0 or cfg.multiplicity != 1)):
         typer.secho("Note: --charge/--multiplicity are only used by UMA's 'omol' "
-                    "task and MACE-POLAR; ignoring them here.",
+                    "task, MACE-POLAR and OrbMol-v2; ignoring them here.",
                     fg=typer.colors.YELLOW)
     if cfg.external_field and "EXTERNAL_FIELD" not in comp["params"]:
         typer.secho("Note: --external-field applies only to MACE-POLAR; "
@@ -111,6 +118,7 @@ _MD_JOBS = [name for name, spec in registry.JOBS.items()
             if spec.get("category") == "md"]
 _UMA_TASKS = list(registry.CALCULATORS["uma"].get("tasks", {}))
 _MACE_VARIANTS = list(registry.CALCULATORS["mace"].get("variants", {}))
+_ORB_VARIANTS = list(registry.CALCULATORS["orb"].get("variants", {}))
 
 
 @md_app.command("run")
@@ -121,14 +129,19 @@ def md_run(
     calculator: str = typer.Option("uma", "--calculator", help=f"MLIP backend: {_CALCULATORS}."),
     variant: Optional[str] = typer.Option(None, "--variant",
                                           help=f"MACE variant: {_MACE_VARIANTS} "
-                                               "(default: mace_mp)."),
+                                               f"(default: mace_mp); Orb variant: "
+                                               f"{_ORB_VARIANTS} (default: "
+                                               "orb_v3_omat)."),
     task: str = typer.Option("omol", "--task", "-t",
                              help=f"UMA task/property head: {_UMA_TASKS}. Only "
                                   "'omol' uses --charge and --multiplicity."),
-    dtype: str = typer.Option("float64", "--dtype",
-                              help="MACE default_dtype: float32 | float64."),
+    precision: Optional[str] = typer.Option(
+        None, "--precision",
+        help="Floating-point precision. MACE: float32 | float64 (default "
+             "float64). Orb: float32-highest | float32-high | float64 (default "
+             "float32-highest). Omit to use the calculator's default."),
     dispersion: str = typer.Option("False", "--dispersion",
-                                   help="MACE-MP only: add D3 dispersion "
+                                   help="MACE-MP / Orb-v3 only: add D3 dispersion "
                                         "(True | False)."),
     external_field: Optional[str] = typer.Option(None, "--external-field",
                                                  help="MACE-POLAR only: uniform "
@@ -168,7 +181,8 @@ def md_run(
     cfg = NVTConfig(
         checkpoint=checkpoint, calculator=calculator, variant=variant,
         job=job, task_name=task,
-        dtype=dtype, dispersion=_parse_bool(dispersion, "--dispersion"),
+        precision=precision,
+        dispersion=_parse_bool(dispersion, "--dispersion"),
         external_field=external_field,
         structure=structure, restart=restart,
         cell=cell, pbc=pbc, charge=charge, multiplicity=multiplicity,

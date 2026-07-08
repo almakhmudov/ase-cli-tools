@@ -43,30 +43,67 @@ CALCULATORS = {
         # MACE is a family: the user first picks "mace", then one of these
         # variants. Each variant is its own skeleton (a different loader
         # function) with its own parameter set. A variant that sets
-        # "uses_charge_spin" additionally consumes CHARGE/MULTIPLICITY.
+        # "uses_charge_spin" additionally consumes CHARGE/MULTIPLICITY. The
+        # PRECISION param maps to MACE's ``default_dtype`` in the template; its
+        # allowed values and default live in each variant's "precision" spec.
         "variants": {
             "mace_mp": {
                 "label": "MACE-MP",
                 "desc": "materials foundation model; optional D3 dispersion",
                 "template": "calculators/mace/mp.py.tmpl",
-                "params": ["CHECKPOINT", "DTYPE", "DISPERSION"],
+                "params": ["CHECKPOINT", "PRECISION", "DISPERSION"],
+                "precision": {"default": "float64",
+                              "choices": ["float32", "float64"]},
             },
             "mace_off": {
                 "label": "MACE-OFF",
                 "desc": "organic-molecule foundation model",
                 "template": "calculators/mace/off.py.tmpl",
-                "params": ["CHECKPOINT", "DTYPE"],
+                "params": ["CHECKPOINT", "PRECISION"],
+                "precision": {"default": "float64",
+                              "choices": ["float32", "float64"]},
             },
             "mace_polar": {
                 "label": "MACE-POLAR",
                 "desc": "polarisable; uses charge, spin & optional external field",
                 "template": "calculators/mace/polar.py.tmpl",
-                "params": ["CHECKPOINT", "DTYPE", "CHARGE", "MULTIPLICITY",
+                "params": ["CHECKPOINT", "PRECISION", "CHARGE", "MULTIPLICITY",
                            "EXTERNAL_FIELD"],
+                "precision": {"default": "float64",
+                              "choices": ["float32", "float64"]},
                 "uses_charge_spin": True,
             },
         },
         "default_variant": "mace_mp",
+    },
+    "orb": {
+        "label": "Orb (orb-models)",
+        # Orb is a family too. Unlike UMA/MACE it needs no checkpoint file: each
+        # variant loads its pretrained weights by name, so no CHECKPOINT param.
+        # PRECISION maps to Orb's ``precision`` kwarg; the recommended default is
+        # "float32-highest".
+        "variants": {
+            "orb_v3_omat": {
+                "label": "Orb-v3-conservative-inf-omat",
+                "desc": "materials foundation model; optional D3 dispersion",
+                "template": "calculators/orb/v3_omat.py.tmpl",
+                "params": ["PRECISION", "DISPERSION"],
+                "precision": {"default": "float32-highest",
+                              "choices": ["float32-highest", "float32-high",
+                                          "float64"]},
+            },
+            "orbmol_v2": {
+                "label": "OrbMol-v2",
+                "desc": "molecules; uses charge & spin",
+                "template": "calculators/orb/orbmol_v2.py.tmpl",
+                "params": ["PRECISION", "CHARGE", "MULTIPLICITY"],
+                "precision": {"default": "float32-highest",
+                              "choices": ["float32-highest", "float32-high",
+                                          "float64"]},
+                "uses_charge_spin": True,
+            },
+        },
+        "default_variant": "orb_v3_omat",
     },
 }
 
@@ -104,6 +141,13 @@ def uses_charge_spin(calculator: str, task_name: "str | None" = None,
         return True
     cs_task = calc.get("charge_spin_task")
     return cs_task is not None and task_name == cs_task
+
+
+def precision_spec(calculator: str, variant: "str | None" = None):
+    """Return the ``{"default", "choices"}`` precision spec for a calculator/
+    variant, or ``None`` if it does not expose a selectable precision."""
+    _, comp = resolve_variant(calculator, variant)
+    return comp.get("precision")
 
 # --- jobs (ensembles / drivers) -------------------------------------------- #
 JOBS = {

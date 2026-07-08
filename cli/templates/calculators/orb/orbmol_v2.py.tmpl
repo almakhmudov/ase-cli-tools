@@ -1,0 +1,15 @@
+
+# --- calculator: OrbMol-v2 --------------------------------------------------
+from orb_models.forcefield import pretrained
+from orb_models.forcefield.inference.calculator import ORBCalculator
+
+# OrbMol-v2 uses the system's total charge and spin multiplicity (read from
+# atoms.info, as with MACE-POLAR and UMA's omol task).
+atoms.info["charge"] = CHARGE
+atoms.info["spin"] = MULTIPLICITY
+
+orbff, atoms_adapter = pretrained.orbmol_v2(
+    device=device,
+    precision=PRECISION,
+)
+base_calc = ORBCalculator(orbff, atoms_adapter=atoms_adapter, device=device)

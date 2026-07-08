@@ -27,8 +27,10 @@ class NVTConfig:
     job: str = "nvt"                     # key in registry.JOBS
 
     task_name: str = "omol"          # UMA task head (unused by other calculators)
-    dtype: str = "float64"           # MACE default_dtype (unused by other calculators)
-    dispersion: bool = False         # MACE-MP: D3 dispersion correction
+    # Floating-point precision for MACE (default_dtype) and Orb (precision).
+    # None -> use the calculator/variant default from the registry.
+    precision: Optional[str] = None
+    dispersion: bool = False         # MACE-MP / Orb-v3: D3 dispersion correction
     external_field: Optional[str] = None  # MACE-POLAR: "Ex Ey Ez" (optional)
     device: str = "auto"
 

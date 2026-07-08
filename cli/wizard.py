@@ -193,6 +193,21 @@ def _md_job_pairs(_s):
             if spec.get("category") == "md"]
 
 
+def _precision_spec(s):
+    return (registry.precision_spec(s["calculator"], s.get("variant"))
+            or {"default": None, "choices": []})
+
+
+def _precision_default(s):
+    return _precision_spec(s)["default"]
+
+
+def _precision_pairs(s):
+    spec = _precision_spec(s)
+    return [(f"{c} (recommended)" if c == spec["default"] else c, c)
+            for c in spec["choices"]]
+
+
 def _default_output(s):
     if s.get("category") == "postprocess":
         return "run_wrap.py"
@@ -275,14 +290,14 @@ def _build_steps() -> List[Step]:
         Step("calculator", "select", "Calculator?",
              applies=_is_md, choices=_calc_pairs, default="uma",
              label="Calculator",
-             clears=("variant", "checkpoint", "task_name", "dtype",
+             clears=("variant", "checkpoint", "task_name", "precision",
                      "dispersion", "charge", "multiplicity", "external_field")),
         Step("variant", "select",
              lambda s: f"{registry.CALCULATORS[s['calculator']]['label']} variant?",
              applies=lambda s: _is_md(s) and _has_variants(s),
              choices=_variant_pairs, default=_variant_default,
              label="Variant",
-             clears=("checkpoint", "dtype", "dispersion", "charge",
+             clears=("checkpoint", "precision", "dispersion", "charge",
                      "multiplicity", "external_field")),
         Step("checkpoint", "path",
              lambda s: f"Path to the {s.get('variant') or s['calculator']} "
@@ -293,10 +308,10 @@ def _build_steps() -> List[Step]:
              applies=lambda s: _is_md(s) and _has_tasks(s),
              choices=_task_pairs, default=_task_default, label="UMA task",
              clears=("charge", "multiplicity")),
-        Step("dtype", "select", "Model precision (default_dtype)?",
-             applies=lambda s: _is_md(s) and "DTYPE" in _comp_params(s),
-             choices=[("float64", "float64"), ("float32", "float32")],
-             default="float64", label="Precision (dtype)"),
+        Step("precision", "select", "Model precision?",
+             applies=lambda s: _is_md(s) and "PRECISION" in _comp_params(s),
+             choices=_precision_pairs, default=_precision_default,
+             label="Precision"),
         Step("dispersion", "bool", "Add a D3 dispersion correction?",
              applies=lambda s: _is_md(s) and "DISPERSION" in _comp_params(s),
              default=False, label="D3 dispersion"),
@@ -469,7 +484,7 @@ def _build_nvt(state) -> NVTConfig:
         variant=state.get("variant"),
         job=state.get("job", "nvt"),
         task_name=state.get("task_name", "omol"),
-        dtype=state.get("dtype", "float64"),
+        precision=state.get("precision"),
         dispersion=state.get("dispersion", False),
         external_field=state.get("external_field"),
         structure=path if kind == "structure" else None,

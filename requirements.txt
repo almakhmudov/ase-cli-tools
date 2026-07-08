@@ -19,6 +19,10 @@ torch==2.8.0
 #   git clone https://github.com/ACEsuit/mace.git && cd mace && pip install .
 #   pip install git+https://github.com/WillBaldwin0/graph_electrostatics.git
 
+# Orb calculators (--calculator orb). Weights download by name on first use;
+# no checkpoint file is required.
+# orb-models
+
 # PLUMED Python interface (needed only for biased runs via --plumed).
 # Prefer conda-forge (py-plumed); the pip package requires a working PLUMED
 # library/kernel to be present on the system.
