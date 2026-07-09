@@ -1,0 +1,24 @@
+# --- thermostat: Langevin (NVT) ----------------------------------------------
+# Stochastic thermostat: each atom feels a friction drag plus a random force,
+# tuned so the fluctuation-dissipation theorem samples the canonical ensemble.
+from ase.md.langevin import Langevin
+from ase.constraints import FixCom
+
+# Keep the centre of mass fixed the ASE-recommended way: fixcm=True is deprecated
+# (it does not strictly sample NVT), so pair fixcm=False with a FixCom constraint.
+# Append it so any constraints already on the structure are preserved.
+atoms.set_constraint(atoms.constraints + [FixCom()])
+
+# FRICTION is given in fs^-1; ASE's Langevin wants a coefficient in inverse ASE
+# time units, so divide by units.fs (0.01 / units.fs == 0.01 fs^-1 == 10 ps^-1).
+# Typical range: 0.001-0.1 fs^-1 (1-100 ps^-1).
+friction = FRICTION if FRICTION is not None else 0.01   # fs^-1
+print(f"Langevin: T={TEMPERATURE} K, dt={TIMESTEP} fs, friction={friction} /fs",
+      flush=True)
+dyn = Langevin(
+    atoms,
+    timestep=TIMESTEP * units.fs,
+    temperature_K=TEMPERATURE,
+    friction=friction / units.fs,
+    fixcm=False,
+)

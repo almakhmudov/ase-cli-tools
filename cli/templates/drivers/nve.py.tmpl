@@ -1,0 +1,8 @@
+# --- integrator: velocity Verlet (NVE, microcanonical) -----------------------
+# No thermostat: energy is conserved and the temperature is free to fluctuate.
+# TEMPERATURE only sets the initial Maxwell-Boltzmann velocities above.
+from ase.md.verlet import VelocityVerlet
+
+print(f"NVE (velocity Verlet): dt={TIMESTEP} fs "
+      f"(T={TEMPERATURE} K only sets the initial velocities)", flush=True)
+dyn = VelocityVerlet(atoms, timestep=TIMESTEP * units.fs)

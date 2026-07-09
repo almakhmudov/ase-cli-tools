@@ -153,6 +153,21 @@ def _uses_cs(s):
     return bool(calc and registry.uses_charge_spin(calc, s.get("variant")))
 
 
+def _has_thermostat(s):
+    job = s.get("job")
+    return bool(_is_md(s) and job
+                and registry.JOBS.get(job, {}).get("thermostats"))
+
+
+def _thermostat_is(s, name):
+    """Whether the job is thermostatted and the chosen thermostat is `name`
+    (falling back to the job's default before the step is answered)."""
+    if not _has_thermostat(s):
+        return False
+    default = registry.JOBS[s["job"]].get("default_thermostat")
+    return s.get("thermostat", default) == name
+
+
 # --------------------------------------------------------------------------- #
 # choice builders (depend on earlier answers)
 # --------------------------------------------------------------------------- #
@@ -172,6 +187,15 @@ def _variant_default(s):
 def _md_job_pairs(_s):
     return [(spec["label"], name) for name, spec in registry.JOBS.items()
             if spec.get("category") == "md"]
+
+
+def _thermostat_pairs(_s):
+    return [(spec["label"], name)
+            for name, spec in registry.THERMOSTATS.items()]
+
+
+def _thermostat_default(s):
+    return registry.JOBS[s["job"]].get("default_thermostat")
 
 
 def _precision_spec(s):
@@ -327,7 +351,9 @@ def _build_steps() -> List[Step]:
              default=None, label="External field"),
 
         # --- MD: dynamics ---------------------------------------------------
-        Step("temperature", "text", "Temperature (K)",
+        Step("temperature", "text",
+             lambda s: ("Initial temperature (K) — sets the starting velocities"
+                        if s.get("job") == "nve" else "Temperature (K)"),
              applies=_is_md, default=298.15, cast=float, label="Temperature (K)"),
         Step("timestep", "text", "Timestep (fs)",
              applies=_is_md, default=0.5, cast=float, label="Timestep (fs)"),
@@ -336,20 +362,40 @@ def _build_steps() -> List[Step]:
         Step("seed", "text", "RNG seed for the initial velocities",
              applies=_is_md, default=42, cast=int, label="RNG seed"),
 
-        # --- MD: thermostat (behind an opt-in) ------------------------------
+        # --- MD: thermostat (thermostatted jobs only, e.g. NVT) -------------
+        Step("thermostat", "select", "Thermostat?",
+             applies=_has_thermostat, choices=_thermostat_pairs,
+             default=_thermostat_default, label="Thermostat",
+             clears=("friction", "taut", "adjust_thermostat",
+                     "tdamp", "tchain", "tloop")),
+        # Langevin: friction, in fs^-1 (converted to ASE units in the template).
+        Step("friction", "text",
+             "Langevin friction (fs^-1)",
+             applies=lambda s: _thermostat_is(s, "langevin"),
+             default=0.01, cast=float, label="Friction (fs^-1)"),
+        # CSVR (Bussi): coupling time.
+        Step("taut", "text",
+             "Coupling time taut (fs) (default: auto = 100*timestep, min 20)",
+             applies=lambda s: _thermostat_is(s, "csvr"),
+             default=None, cast=float, label="taut (fs)"),
+        # Nose-Hoover: chain parameters, behind an opt-in.
         Step("adjust_thermostat", "bool",
              "Adjust Nose-Hoover thermostat parameters?",
-             applies=_is_md, default=False, label="Custom thermostat",
+             applies=lambda s: _thermostat_is(s, "nose_hoover"),
+             default=False, label="Custom thermostat",
              clears=("tdamp", "tchain", "tloop")),
         Step("tdamp", "text",
              "Coupling time tdamp (fs) (default: auto = 100*timestep, min 20)",
-             applies=lambda s: _is_md(s) and s.get("adjust_thermostat"),
+             applies=lambda s: (_thermostat_is(s, "nose_hoover")
+                                and s.get("adjust_thermostat")),
              default=None, cast=float, label="tdamp (fs)"),
         Step("tchain", "text", "Chain length tchain",
-             applies=lambda s: _is_md(s) and s.get("adjust_thermostat"),
+             applies=lambda s: (_thermostat_is(s, "nose_hoover")
+                                and s.get("adjust_thermostat")),
              default=3, cast=int, label="tchain"),
         Step("tloop", "text", "Inner loops tloop",
-             applies=lambda s: _is_md(s) and s.get("adjust_thermostat"),
+             applies=lambda s: (_thermostat_is(s, "nose_hoover")
+                                and s.get("adjust_thermostat")),
              default=1, cast=int, label="tloop"),
 
         # --- MD: output -----------------------------------------------------
@@ -476,9 +522,12 @@ def _build_nvt(state) -> NVTConfig:
         timestep=state.get("timestep", 0.5),
         nsteps=state.get("nsteps", 10000),
         seed=state.get("seed", 42),
+        thermostat=state.get("thermostat"),
         tdamp=state.get("tdamp"),
         tchain=state.get("tchain", 3),
         tloop=state.get("tloop", 1),
+        friction=state.get("friction"),
+        taut=state.get("taut"),
         traj_interval=state.get("traj_interval", 10),
         traj_format=state.get("traj_format", "traj"),
         wrap=state.get("wrap", False),

@@ -186,15 +186,69 @@ def precision_spec(calculator: str, variant: "str | None" = None):
     _, comp = resolve_variant(calculator, variant)
     return comp.get("precision")
 
+# --- thermostats (the dynamics driver for a thermostatted MD job) ---------- #
+# A thermostatted job (NVT) picks one of these with ``--thermostat``; each names
+# the driver skeleton that builds the ASE ``dyn`` object and the parameter names
+# it contributes. Adding a thermostat is a driver template + one entry here.
+THERMOSTATS = {
+    "nose_hoover": {
+        "label": "Nose-Hoover chain",
+        "template": "drivers/nvt_nose_hoover.py.tmpl",
+        "params": ["TDAMP", "TCHAIN", "TLOOP"],
+    },
+    "langevin": {
+        "label": "Langevin",
+        "template": "drivers/nvt_langevin.py.tmpl",
+        "params": ["FRICTION"],
+    },
+    "csvr": {
+        "label": "CSVR (Bussi)",
+        "template": "drivers/nvt_csvr.py.tmpl",
+        "params": ["TAUT"],
+    },
+}
+
+
+def resolve_thermostat(job: str, thermostat: "str | None" = None):
+    """Return ``(thermostat_name, thermostat_spec)`` for a job.
+
+    Jobs without a ``thermostats`` dict (e.g. NVE, which has a fixed integrator)
+    return ``(None, None)`` so the caller can treat both kinds uniformly."""
+    spec = JOBS[job]
+    thermostats = spec.get("thermostats")
+    if not thermostats:
+        return None, None
+    name = (thermostat or spec.get("default_thermostat")
+            or next(iter(thermostats)))
+    if name not in thermostats:
+        raise KeyError(f"unknown thermostat {name!r} for job {job!r}; "
+                       f"available: {sorted(thermostats)}")
+    return name, thermostats[name]
+
 # --- jobs (ensembles / drivers) -------------------------------------------- #
+# Every MD job shares the ``jobs/md.py.tmpl`` tail (velocities, reporter, run,
+# final frame) and supplies the dynamics driver that builds ``dyn``: a
+# thermostatted job lists ``thermostats`` (the driver is chosen with
+# ``--thermostat``); a fixed-integrator job names a single ``driver_template``.
 JOBS = {
     "nvt": {
-        "label": "NVT (Nose-Hoover chain)",
+        "label": "NVT",
         "category": "md",
-        "template": "jobs/nvt.py.tmpl",
+        "template": "jobs/md.py.tmpl",
+        "thermostats": THERMOSTATS,
+        "default_thermostat": "nose_hoover",
         "params": [
-            "TEMPERATURE", "TIMESTEP", "NSTEPS", "TRAJ_INTERVAL",
-            "TDAMP", "TCHAIN", "TLOOP", "SEED",
+            "TEMPERATURE", "TIMESTEP", "NSTEPS", "TRAJ_INTERVAL", "SEED",
+            "TRAJ", "LOG", "LAST_FRAME",
+        ],
+    },
+    "nve": {
+        "label": "NVE (microcanonical)",
+        "category": "md",
+        "template": "jobs/md.py.tmpl",
+        "driver_template": "drivers/nve.py.tmpl",
+        "params": [
+            "TEMPERATURE", "TIMESTEP", "NSTEPS", "TRAJ_INTERVAL", "SEED",
             "TRAJ", "LOG", "LAST_FRAME",
         ],
     },

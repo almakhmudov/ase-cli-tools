@@ -20,23 +20,10 @@ else:
     if not periodic:
         ZeroRotation(atoms)          # only meaningful for an isolated molecule
 
-# --- Nose-Hoover chain NVT ---------------------------------------------------
-from ase.md.nose_hoover_chain import NoseHooverChainNVT
+# --- integrator / dynamics ---------------------------------------------------
 from ase.io.trajectory import Trajectory
 from ase.calculators.singlepoint import SinglePointCalculator
-
-tdamp = TDAMP if TDAMP is not None else max(100.0 * TIMESTEP, 20.0)
-print(f"Nose-Hoover: T={TEMPERATURE} K, dt={TIMESTEP} fs, tdamp={tdamp} fs, "
-      f"tchain={TCHAIN}, tloop={TLOOP}", flush=True)
-dyn = NoseHooverChainNVT(
-    atoms,
-    timestep=TIMESTEP * units.fs,
-    temperature_K=TEMPERATURE,
-    tdamp=tdamp * units.fs,
-    tchain=TCHAIN,
-    tloop=TLOOP,
-)
-
+$DRIVER
 
 # --- per-frame reporter (log file + stdout, with density and ETA) ------------
 class MDReporter:
@@ -99,7 +86,7 @@ dyn.run(NSTEPS)
 _wall = time.time() - _t0
 _close_traj()
 reporter.close()
-print(f"[nvt] {NSTEPS} steps in {_wall:.1f} s "
+print(f"[md] {NSTEPS} steps in {_wall:.1f} s "
       f"({1000 * _wall / max(NSTEPS, 1):.2f} ms/step) -> {TRAJ}", flush=True)
 
 # --- final frame (extxyz) ----------------------------------------------------
@@ -108,4 +95,4 @@ out.arrays.pop("momenta", None)
 out.info = {"step": NSTEPS, "time_fs": NSTEPS * TIMESTEP}
 out.calc = SinglePointCalculator(out, energy=atoms.get_potential_energy())
 write(LAST_FRAME, out, format="extxyz")
-print(f"[nvt] wrote final frame -> {LAST_FRAME}", flush=True)
+print(f"[md] wrote final frame -> {LAST_FRAME}", flush=True)

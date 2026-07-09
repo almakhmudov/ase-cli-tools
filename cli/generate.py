@@ -98,6 +98,8 @@ def _param_values(cfg: NVTConfig, traj_path: str, wrapped_path: str) -> Dict[str
         "TDAMP": repr(cfg.tdamp),
         "TCHAIN": str(cfg.tchain),
         "TLOOP": str(cfg.tloop),
+        "FRICTION": repr(cfg.friction),
+        "TAUT": repr(cfg.taut),
         "SEED": str(cfg.seed),
         "TRAJ": repr(traj_path),
         "LOG": repr(cfg.log),
@@ -178,12 +180,24 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
         if uses_cs else ""
     )
 
+    # Resolve the dynamics driver: a thermostat for a thermostatted job (NVT), or
+    # a fixed integrator (NVE). The driver skeleton builds the ASE ``dyn`` object
+    # and is spliced into the shared MD tail at its $DRIVER slot.
+    thermo_name, thermo = registry.resolve_thermostat(cfg.job, cfg.thermostat)
+    if thermo is not None:
+        driver_template = thermo["template"]
+        driver_params = thermo["params"]
+    else:
+        driver_template = job["driver_template"]
+        driver_params = []
+
     # Collect the parameter names contributed by each selected component.
     keys = list(registry.SHARED_PARAMS)
     keys += comp["params"]
     if uses_cs and "CHARGE" not in comp["params"]:
         keys += ["CHARGE", "MULTIPLICITY"]
     keys += job["params"]
+    keys += driver_params
     if cfg.wrap:
         keys += registry.FEATURES["wrap"]["params"]
     if biased:
@@ -192,7 +206,10 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     plumed_lines = _read_plumed_lines(cfg.plumed) if biased else None
     params_block = _render_params(keys, values, plumed_lines)
 
-    title = f"{job['label']} with {comp.get('label', calc['label'])}"
+    job_label = job["label"]
+    if thermo is not None:
+        job_label += f" ({thermo['label']})"
+    title = f"{job_label} with {comp.get('label', calc['label'])}"
     if biased:
         title += " + PLUMED"
 
@@ -206,8 +223,10 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
         else _load("attach/plain.py.tmpl"),
     ]
     writer = _load("writers/traj.py.tmpl" if fmt == "traj" else "writers/xyz.py.tmpl")
+    driver_text = _load(driver_template).strip("\n")
     parts.append(
-        Template(_load(job["template"])).substitute(TRAJ_WRITER=writer.rstrip("\n"))
+        Template(_load(job["template"])).substitute(
+            DRIVER=driver_text, TRAJ_WRITER=writer.rstrip("\n"))
     )
     if cfg.wrap:
         parts.append(_load(registry.FEATURES["wrap"]["append_template"]))

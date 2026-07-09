@@ -1,0 +1,14 @@
+# --- thermostat: Nose-Hoover chain (NVT) -------------------------------------
+from ase.md.nose_hoover_chain import NoseHooverChainNVT
+
+tdamp = TDAMP if TDAMP is not None else max(100.0 * TIMESTEP, 20.0)
+print(f"Nose-Hoover: T={TEMPERATURE} K, dt={TIMESTEP} fs, tdamp={tdamp} fs, "
+      f"tchain={TCHAIN}, tloop={TLOOP}", flush=True)
+dyn = NoseHooverChainNVT(
+    atoms,
+    timestep=TIMESTEP * units.fs,
+    temperature_K=TEMPERATURE,
+    tdamp=tdamp * units.fs,
+    tchain=TCHAIN,
+    tloop=TLOOP,
+)

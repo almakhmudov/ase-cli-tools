@@ -44,9 +44,16 @@ class NVTConfig:
     timestep: float = 0.5
     nsteps: int = 10000
     traj_interval: int = 10
-    tdamp: Optional[float] = None
-    tchain: int = 3
-    tloop: int = 1
+
+    # Thermostat (thermostatted jobs only, e.g. NVT). None -> the job's default.
+    # Each thermostat reads its own coupling parameters below; the others are
+    # ignored. NVE has no thermostat, so these are unused there.
+    thermostat: Optional[str] = None     # nose_hoover | langevin | csvr
+    tdamp: Optional[float] = None        # Nose-Hoover coupling time (fs); None -> auto
+    tchain: int = 3                      # Nose-Hoover chain length
+    tloop: int = 1                       # Nose-Hoover inner loops
+    friction: Optional[float] = None     # Langevin friction (fs^-1); None -> 0.01
+    taut: Optional[float] = None         # CSVR coupling time (fs); None -> auto
     seed: int = 42
 
     # Biasing (PLUMED)

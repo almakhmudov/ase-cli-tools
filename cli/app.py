@@ -45,6 +45,7 @@ def _main(ctx: typer.Context):
 # Shared: emit a script, optionally print/run it
 # --------------------------------------------------------------------------- #
 _CALCULATORS = list(registry.CALCULATORS)   # e.g. ["uma"], grows with the registry
+_THERMOSTATS = list(registry.THERMOSTATS)    # e.g. ["nose_hoover", "langevin", ...]
 
 _TRUE = {"true", "t", "1", "yes", "y", "on"}
 _FALSE = {"false", "f", "0", "no", "n", "off"}
@@ -94,6 +95,28 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
     if cfg.external_field and "EXTERNAL_FIELD" not in comp["params"]:
         typer.secho("Note: --external-field applies only to MACE-POLAR; "
                     "ignoring it here.", fg=typer.colors.YELLOW)
+
+    # Validate --thermostat against the chosen job (thermostatted jobs only) and
+    # warn when a coupling flag does not match the active thermostat.
+    try:
+        thermo_name, _ = registry.resolve_thermostat(cfg.job, cfg.thermostat)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc))
+    if not registry.JOBS[cfg.job].get("thermostats"):
+        if any(v is not None for v in (cfg.thermostat, cfg.friction, cfg.taut,
+                                       cfg.tdamp)):
+            typer.secho(f"Note: job {cfg.job!r} has no thermostat; ignoring "
+                        "thermostat options.", fg=typer.colors.YELLOW)
+    else:
+        if cfg.friction is not None and thermo_name != "langevin":
+            typer.secho("Note: --friction applies only to the Langevin "
+                        "thermostat; ignoring it here.", fg=typer.colors.YELLOW)
+        if cfg.taut is not None and thermo_name != "csvr":
+            typer.secho("Note: --taut applies only to the CSVR thermostat; "
+                        "ignoring it here.", fg=typer.colors.YELLOW)
+        if cfg.tdamp is not None and thermo_name != "nose_hoover":
+            typer.secho("Note: --tdamp applies only to the Nose-Hoover "
+                        "thermostat; ignoring it here.", fg=typer.colors.YELLOW)
 
     text = generate.generate_md_script(cfg, script_name=output)
     if to_stdout:
@@ -158,12 +181,24 @@ def md_run(
     seed: int = typer.Option(42, "--seed",
                              help="RNG seed for the initial Maxwell-Boltzmann "
                                   "velocities (for reproducibility)."),
+    thermostat: Optional[str] = typer.Option(
+        None, "--thermostat",
+        help=f"NVT thermostat: {_THERMOSTATS} (default nose_hoover). Not used "
+             "by NVE."),
     tdamp: Optional[float] = typer.Option(None, "--tdamp",
                                           help="Nose-Hoover coupling time in fs. "
                                                "Omit = auto (100*timestep, min 20 fs)."),
     tchain: int = typer.Option(3, "--tchain", help="Nose-Hoover chain length."),
     tloop: int = typer.Option(1, "--tloop",
                               help="Nose-Hoover inner integration loops."),
+    friction: Optional[float] = typer.Option(
+        None, "--friction",
+        help="Langevin friction coefficient in fs^-1 (default 0.01 = 10 ps^-1). "
+             "Typical range 0.001-0.1 fs^-1 (1-100 ps^-1)."),
+    taut: Optional[float] = typer.Option(
+        None, "--taut",
+        help="CSVR (Bussi) coupling time in fs. Omit = auto (100*timestep, "
+             "min 20 fs)."),
     traj_interval: int = typer.Option(10, help="Record every N steps."),
     traj_format: str = typer.Option("traj", help="traj | xyz."),
     wrap: bool = typer.Option(False, help="Also wrap the trajectory at the end."),
@@ -183,7 +218,8 @@ def md_run(
         structure=structure, restart=restart,
         cell=cell, pbc=pbc, charge=charge, multiplicity=multiplicity,
         temperature=temperature, timestep=timestep, nsteps=nsteps, seed=seed,
-        tdamp=tdamp, tchain=tchain, tloop=tloop,
+        thermostat=thermostat,
+        tdamp=tdamp, tchain=tchain, tloop=tloop, friction=friction, taut=taut,
         traj_interval=traj_interval, traj_format=traj_format, wrap=wrap,
         plumed=plumed, prev_steps=prev_steps,
     )

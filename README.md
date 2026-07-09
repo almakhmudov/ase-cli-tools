@@ -12,7 +12,8 @@ your work stays reproducible.
 
 The building blocks are predefined and tested, and assembled from modular
 skeletons — in the spirit of ASE's own swappable calculators and dynamics. Now
-the toolkit covers **NVT molecular dynamics** with the **UMA**
+the toolkit covers **NVT** (Nose-Hoover, Langevin or CSVR) and **NVE molecular
+dynamics** with the **UMA**
 (from [FairChem](https://github.com/facebookresearch/fairchem)), **MACE**
 (from [ACEsuit](https://github.com/ACEsuit/mace)), **Orb**
 (from [orb-models](https://github.com/orbital-materials/orb-models)) and **GRACE**
@@ -157,6 +158,16 @@ ase-cli-tools md run --job nvt -c uma.pt -s crystal.cif --cell "10 10 10" \
 ase-cli-tools md run --job nvt -c uma.pt -s mixture.xyz --cell "20 20 20" \
     -T 498.15 -n 10000 --tdamp 50 --tchain 5 --tloop 2
 
+# a different NVT thermostat: Langevin (--friction) or CSVR/Bussi (--taut)
+ase-cli-tools md run --job nvt --thermostat langevin -c uma.pt \
+    -s mixture.xyz --cell "20 20 20" -T 498.15 -n 10000 --friction 0.02
+ase-cli-tools md run --job nvt --thermostat csvr -c uma.pt \
+    -s mixture.xyz --cell "20 20 20" -T 498.15 -n 10000 --taut 80
+
+# NVE (microcanonical): no thermostat; -T only sets the initial velocities
+ase-cli-tools md run --job nve -c uma.pt -s mixture.xyz --cell "20 20 20" \
+    -T 300 -n 10000
+
 # MACE instead of UMA: pick a variant with --variant (default mace_mp)
 ase-cli-tools md run --job nvt --calculator mace --variant mace_mp -c mace.model \
     -s mixture.xyz --cell "20 20 20" --precision float32 --dispersion True -T 298.15 -n 10000
@@ -189,10 +200,22 @@ ase-cli-tools md run --job nvt -c uma.pt -s in.xyz --run
 Every job writes a `.py` file by default (`-o` to name it), `--stdout` prints it
 instead, and `--run` executes the freshly written script.
 
-The Nose-Hoover thermostat is tunable via `--tdamp` (coupling time in fs; omit
-for the auto value of `100*timestep`, at least 20 fs), `--tchain` (chain length)
-and `--tloop` (inner loops). `--seed` sets the RNG seed for the initial
-Maxwell-Boltzmann velocities (default `42`) so a fresh-start run is reproducible.
+`--job` selects the ensemble: `nvt` (thermostatted, the default) or `nve`
+(microcanonical, energy-conserving — `-T` there only sets the initial
+velocities). For NVT, `--thermostat` picks the thermostat:
+
+- **`nose_hoover`** (the default) — Nose-Hoover chain, tuned via `--tdamp`
+  (coupling time in fs; omit for the auto value of `100*timestep`, at least
+  20 fs), `--tchain` (chain length) and `--tloop` (inner loops).
+- **`langevin`** — stochastic thermostat, coupling set by `--friction` in fs⁻¹
+  (default `0.01`, i.e. 10 ps⁻¹). A typical range is `0.001`–`0.1` fs⁻¹
+  (1–100 ps⁻¹). The generated script converts to ASE's internal units for you.
+- **`csvr`** — canonical sampling through velocity rescaling
+  (Bussi-Donadio-Parrinello), coupling time set by `--taut` (fs; omit for the
+  same auto value as `--tdamp`).
+
+`--seed` sets the RNG seed for the initial Maxwell-Boltzmann velocities (default
+`42`) so a fresh-start run is reproducible.
 
 `--calculator` chooses the backend (`uma`, `mace`, `orb`, `grace`), with
 `-c`/`--checkpoint` pointing at that backend's model file where one is needed
@@ -227,7 +250,8 @@ Command layout:
 ase-cli-tools
 ├── md
 │   └── run          -> generate an MD script; --job selects the ensemble
-│                       (nvt, ...), --variant the calculator member, --plumed biasing
+│                       (nvt, nve), --thermostat the NVT thermostat, --variant
+│                       the calculator member, --plumed biasing
 └── postprocess
     └── wrap         -> generate a trajectory-wrapping script
 ```
@@ -249,7 +273,8 @@ Calculators:
 
 Jobs / ensembles:
 
-- [ ] More thermostats and barostats
-- [ ] NVE and NPT molecular dynamics
+- [x] NVT thermostats: Nose-Hoover chain, Langevin, CSVR (Bussi)
+- [x] NVE molecular dynamics
+- [ ] NPT molecular dynamics and barostats
 - [ ] Single-point and frequency (vibrational) calculations
 - [ ] Geometry and cell relaxation

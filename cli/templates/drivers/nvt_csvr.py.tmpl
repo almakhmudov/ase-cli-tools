@@ -1,0 +1,15 @@
+# --- thermostat: CSVR / Bussi-Donadio-Parrinello (NVT) -----------------------
+# Canonical Sampling through Velocity Rescaling: a global, deterministic-plus-
+# stochastic rescaling of the kinetic energy. Preserves the dynamics better than
+# Langevin while still sampling the canonical ensemble.
+from ase.md.bussi import Bussi
+
+taut = TAUT if TAUT is not None else max(100.0 * TIMESTEP, 20.0)
+print(f"CSVR (Bussi): T={TEMPERATURE} K, dt={TIMESTEP} fs, taut={taut} fs",
+      flush=True)
+dyn = Bussi(
+    atoms,
+    timestep=TIMESTEP * units.fs,
+    temperature_K=TEMPERATURE,
+    taut=taut * units.fs,
+)
