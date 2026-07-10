@@ -1,0 +1,37 @@
+
+# --- calculator: Quantum ESPRESSO (QM) --------------------------------------
+# ASE writes a pw.x input file, runs the executable and parses its output.
+# PSEUDOPOTENTIALS maps each element to its UPF file (looked up in PSEUDO_DIR);
+# INPUT_DATA is a flat dict of pw.x keywords (ASE routes each into the correct
+# &section); KPTS is a Monkhorst-Pack grid (None -> Gamma point only).
+from ase.calculators.espresso import Espresso
+
+if COMMAND and PSEUDO_DIR:
+    # EspressoProfile needs BOTH the pw.x command (any launcher prefix is fine,
+    # e.g. "mpiexec -n 16 /path/to/pw.x") and the pseudopotential directory.
+    from ase.calculators.espresso import EspressoProfile
+    profile = EspressoProfile(command=COMMAND, pseudo_dir=PSEUDO_DIR)
+elif COMMAND or PSEUDO_DIR:
+    raise SystemExit("Quantum ESPRESSO: set BOTH the pw.x command and pseudo_dir, "
+                     "or neither (and configure espresso in the ASE config file).")
+else:
+    profile = None   # fall back to the ASE configuration for pw.x + pseudo_dir
+
+# Charge and spin as pw.x keywords (QE does not read them from atoms.info). A
+# non-singlet multiplicity turns on spin polarization with a starting total
+# magnetization of (multiplicity - 1) unpaired electrons; a singlet stays
+# non-polarized. setdefault lets an explicit --input keyword override these.
+if CHARGE:
+    INPUT_DATA.setdefault("tot_charge", float(CHARGE))
+if MULTIPLICITY == 1:
+    INPUT_DATA.setdefault("nspin", 1)
+else:
+    INPUT_DATA.setdefault("nspin", 2)
+    INPUT_DATA.setdefault("tot_magnetization", MULTIPLICITY - 1)
+
+base_calc = Espresso(
+    profile=profile,
+    pseudopotentials=PSEUDOPOTENTIALS,
+    input_data=INPUT_DATA,
+    kpts=KPTS,
+)

@@ -94,6 +94,91 @@ def _orca_simpleinput(orcasimpleinput: str, needs_forces: bool) -> str:
     return f"{orcasimpleinput} EnGrad".strip()
 
 
+def parse_pseudopotentials(pairs: Optional[List[str]]) -> Optional[Dict[str, str]]:
+    """Turn ``['Na=na.UPF', 'Cl=cl.UPF']`` into ``{'Na': 'na.UPF', ...}``.
+
+    Front-end helper (shared by the flags and the wizard); raises ValueError on a
+    malformed entry so the caller can report it."""
+    if not pairs:
+        return None
+    out: Dict[str, str] = {}
+    for item in pairs:
+        if "=" not in item:
+            raise ValueError(f"pseudopotential {item!r} must be 'Element=file.UPF'")
+        element, filename = item.split("=", 1)
+        out[element.strip()] = filename.strip()
+    return out
+
+
+def _infer_scalar(value: str):
+    """Best-effort type inference for a pw.x keyword value: int, float, bool
+    (true/false/.true./.false.) or, failing those, the string as-is."""
+    text = value.strip()
+    for cast in (int, float):
+        try:
+            return cast(text)
+        except ValueError:
+            pass
+    low = text.lower()
+    if low in ("true", ".true."):
+        return True
+    if low in ("false", ".false."):
+        return False
+    return text
+
+
+def parse_input_data(pairs: Optional[List[str]]) -> Optional[Dict[str, object]]:
+    """Turn ``['ecutwfc=60', 'disk_io=low']`` into a flat pw.x ``input_data``
+    dict with inferred value types. Raises ValueError on a malformed entry."""
+    if not pairs:
+        return None
+    out: Dict[str, object] = {}
+    for item in pairs:
+        if "=" not in item:
+            raise ValueError(f"input entry {item!r} must be 'key=value'")
+        key, value = item.split("=", 1)
+        out[key.strip()] = _infer_scalar(value)
+    return out
+
+
+def _qe_kpts(value: Optional[str]):
+    """Parse a k-point grid '4 4 4' into a tuple, or None for Gamma-point only."""
+    if not value:
+        return None
+    return tuple(int(x) for x in value.replace(",", " ").split())
+
+
+def _qe_input_data(cfg: NVTConfig, needs_forces: bool) -> Dict[str, object]:
+    """Assemble the flat pw.x ``input_data`` dict: the cutoffs, then the user's
+    extra keywords, then the force/stress flags when the job needs them (ASE does
+    not add these itself, so without them QE prints no forces)."""
+    data: Dict[str, object] = {}
+    if cfg.ecutwfc is not None:
+        data["ecutwfc"] = cfg.ecutwfc
+    if cfg.ecutrho is not None:
+        data["ecutrho"] = cfg.ecutrho
+    if cfg.input_data:
+        data.update(cfg.input_data)          # user entries win over the cutoffs
+    if needs_forces:
+        data.setdefault("tprnfor", True)
+        data.setdefault("tstress", True)
+    return data
+
+
+def _apply_force_keywords(values: Dict[str, str], cfg: NVTConfig,
+                          needs_forces: bool) -> None:
+    """Patch the QM code's force-request keyword into the rendered `values`.
+
+    ASE does not add these automatically: ORCA needs ``EnGrad`` on its "!" line,
+    Quantum ESPRESSO needs ``tprnfor``/``tstress`` in ``input_data``. Only done
+    when the job actually needs forces (all MD/relax; single-point when on)."""
+    if cfg.calculator == "orca":
+        values["ORCASIMPLEINPUT"] = repr(
+            _orca_simpleinput(cfg.orcasimpleinput, needs_forces))
+    elif cfg.calculator == "espresso":
+        values["INPUT_DATA"] = repr(_qe_input_data(cfg, needs_forces))
+
+
 def _charge_spin_block(uses_cs: bool) -> str:
     """The atoms.info charge/spin lines spliced into calculators that read them
     from ``atoms.info`` via the ``$CHARGE_SPIN`` placeholder (UMA). Calculators
@@ -126,9 +211,13 @@ def _param_values(cfg: NVTConfig, traj_path: str, wrapped_path: str) -> Dict[str
         "PRECISION": repr(cfg.precision),
         "DISPERSION": str(cfg.dispersion),
         "EXTERNAL_FIELD": repr(_parse_vec(cfg.external_field)),
+        "COMMAND": repr(cfg.command),
         "ORCASIMPLEINPUT": repr(cfg.orcasimpleinput),
         "ORCABLOCKS": repr(_orca_blocks(cfg)),
-        "ORCA_COMMAND": repr(cfg.orca_command),
+        "PSEUDOPOTENTIALS": repr(cfg.pseudopotentials or {}),
+        "PSEUDO_DIR": repr(cfg.pseudo_dir),
+        "INPUT_DATA": repr(_qe_input_data(cfg, needs_forces=False)),
+        "KPTS": repr(_qe_kpts(cfg.kpts)),
         "SP_FORCES": str(cfg.sp_forces),
         "SP_OUTPUT": repr(cfg.sp_output),
         "TEMPERATURE": str(cfg.temperature),
@@ -193,10 +282,8 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     traj_path, wrapped_path, fmt = _traj_paths(cfg)
     values = _param_values(cfg, traj_path, wrapped_path)
 
-    # MD needs forces at every step; make ORCA request a gradient.
-    if cfg.calculator == "orca":
-        values["ORCASIMPLEINPUT"] = repr(
-            _orca_simpleinput(cfg.orcasimpleinput, needs_forces=True))
+    # MD needs forces at every step; make the QM codes request them.
+    _apply_force_keywords(values, cfg, needs_forces=True)
 
     # Resolve the chosen variant to its component skeleton (every calculator is a
     # variant family). An unknown variant raises KeyError here.
@@ -298,11 +385,9 @@ def generate_singlepoint_script(cfg: NVTConfig,
     traj_path, wrapped_path, _ = _traj_paths(cfg)
     values = _param_values(cfg, traj_path, wrapped_path)
 
-    # Make ORCA request a gradient only when forces are actually wanted, so an
+    # Request forces from the QM codes only when actually wanted, so an
     # energy-only single point stays cheap.
-    if cfg.calculator == "orca":
-        values["ORCASIMPLEINPUT"] = repr(
-            _orca_simpleinput(cfg.orcasimpleinput, needs_forces=cfg.sp_forces))
+    _apply_force_keywords(values, cfg, needs_forces=cfg.sp_forces)
 
     variant_name, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
     for name, value in comp.get("values", {}).items():
@@ -354,10 +439,8 @@ def generate_relax_script(cfg: NVTConfig,
     traj_path, wrapped_path, _ = _traj_paths(cfg)
     values = _param_values(cfg, traj_path, wrapped_path)
 
-    # A relaxation evaluates forces at every step; make ORCA request a gradient.
-    if cfg.calculator == "orca":
-        values["ORCASIMPLEINPUT"] = repr(
-            _orca_simpleinput(cfg.orcasimpleinput, needs_forces=True))
+    # A relaxation evaluates forces at every step; make the QM codes request them.
+    _apply_force_keywords(values, cfg, needs_forces=True)
 
     variant_name, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
     for name, value in comp.get("values", {}).items():

@@ -41,15 +41,30 @@ class JobConfig:
     external_field: Optional[str] = None  # MACE-POLAR: "Ex Ey Ez" (optional)
     device: str = "auto"
 
-    # ORCA (QM) calculator. orcasimpleinput is the "!" line; orcablocks is the
-    # "% ... end" text (already newline-joined when several blocks are given).
-    # nprocs, when set, is emitted as a leading "%pal nprocs N end" block, so the
-    # user never hand-writes it. orca_command overrides the orca binary path via
-    # an OrcaProfile (None -> ASE's configfile / PATH).
+    # External QM codes (ORCA, Quantum ESPRESSO) run as a subprocess. ``command``
+    # is the executable, optionally with a launcher prefix (e.g. "mpiexec -n 16
+    # /path/to/pw.x"); None -> ASE's config file / PATH. It maps to the code's
+    # ASE Profile (OrcaProfile / EspressoProfile).
+    command: Optional[str] = None
+
+    # ORCA (QM). orcasimpleinput is the "!" line; orcablocks is the "% ... end"
+    # text (already newline-joined when several blocks are given). nprocs, when
+    # set, is emitted as a leading "%pal nprocs N end" block.
     orcasimpleinput: str = "B3LYP def2-SVP"
     orcablocks: Optional[str] = None
     nprocs: Optional[int] = None
-    orca_command: Optional[str] = None
+
+    # Quantum ESPRESSO (QM). pseudopotentials maps each element to its UPF file
+    # (found in pseudo_dir). ecutwfc/ecutrho are the plane-wave and charge-density
+    # cutoffs (Ry). kpts is a Monkhorst-Pack grid "k1 k2 k3" (None -> Gamma).
+    # input_data holds any extra flat pw.x keywords; ASE routes each to its
+    # &section. The force/stress flags (tprnfor/tstress) are injected when needed.
+    pseudopotentials: Optional[dict] = None
+    pseudo_dir: Optional[str] = None
+    ecutwfc: Optional[float] = None
+    ecutrho: Optional[float] = None
+    kpts: Optional[str] = None
+    input_data: Optional[dict] = None
 
     cell: Optional[str] = None           # "a b c" | "a b c al be ga" | 9 values
     pbc: str = "true"

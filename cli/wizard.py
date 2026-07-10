@@ -152,6 +152,15 @@ def _is_orca(s):
     return _wants_calc(s) and s.get("calculator") == "orca"
 
 
+def _is_espresso(s):
+    return _wants_calc(s) and s.get("calculator") == "espresso"
+
+
+def _needs_command(s):
+    """The executable prompt applies to the external codes (ORCA, QE)."""
+    return _is_orca(s) or _is_espresso(s)
+
+
 def _comp_params(s):
     calc = s.get("calculator")
     if not calc:
@@ -237,6 +246,23 @@ def _optimizer_pairs(_s):
 
 def _optimizer_default(s):
     return registry.JOBS["relax"].get("default_optimizer")
+
+
+def _pseudos_cast(value):
+    """Wizard entry 'Na=na.UPF Cl=cl.UPF' -> {'Na': 'na.UPF', 'Cl': 'cl.UPF'}."""
+    return generate.parse_pseudopotentials(value.split()) or {}
+
+
+def _input_data_cast(value):
+    """Wizard entry 'ecutwfc=60 disk_io=low' -> a flat pw.x input_data dict."""
+    return generate.parse_input_data(value.split()) or {}
+
+
+def _fmt_dict(value):
+    """Compact preview of a dict (pseudopotentials / input_data) for the review."""
+    if not value:
+        return "none"
+    return ", ".join(f"{k}={v}" for k, v in value.items())
 
 
 def _orcablocks_cast(value):
@@ -343,7 +369,9 @@ def _build_steps() -> List[Step]:
              label="Calculator",
              clears=("variant", "checkpoint", "precision", "dispersion",
                      "charge", "multiplicity", "external_field",
-                     "orcasimpleinput", "nprocs", "orcablocks", "orca_command")),
+                     "orcasimpleinput", "nprocs", "orcablocks", "command",
+                     "pseudopotentials", "pseudo_dir", "ecutwfc", "ecutrho",
+                     "kpts", "input_data")),
         Step("variant", "select",
              lambda s: f"{registry.CALCULATORS[s['calculator']]['label']} "
                        "variant / model / task?",
@@ -377,9 +405,34 @@ def _build_steps() -> List[Step]:
              r"Extra '% ... end' blocks (use \n between several; blank = none)",
              applies=_is_orca, default=None, cast=_orcablocks_cast,
              label="ORCA %-blocks", fmt=_fmt_blocks),
-        Step("orca_command", "text",
-             "Path to the orca binary (blank = ASE configfile / PATH)",
-             applies=_is_orca, default=None, label="ORCA binary path"),
+
+        # --- Quantum ESPRESSO (QM) ------------------------------------------
+        Step("pseudopotentials", "text",
+             "Pseudopotentials 'El=file.UPF' (space-separated; required)",
+             applies=_is_espresso, default={}, cast=_pseudos_cast,
+             label="Pseudopotentials", fmt=_fmt_dict),
+        Step("pseudo_dir", "text",
+             "Pseudopotential directory (blank = ASE config)",
+             applies=_is_espresso, default=None, label="Pseudo dir"),
+        Step("ecutwfc", "text",
+             "Plane-wave cutoff ecutwfc (Ry) — required",
+             applies=_is_espresso, default=None, cast=float, label="ecutwfc (Ry)"),
+        Step("ecutrho", "text",
+             "Charge-density cutoff ecutrho (Ry) (blank = QE default)",
+             applies=_is_espresso, default=None, cast=float, label="ecutrho (Ry)"),
+        Step("kpts", "text",
+             "k-point grid 'k1 k2 k3' (blank = Gamma only)",
+             applies=_is_espresso, default=None, label="k-points"),
+        Step("input_data", "text",
+             "Extra pw.x keywords 'key=value' (space-separated; blank = none)",
+             applies=_is_espresso, default={}, cast=_input_data_cast,
+             label="Extra pw.x keywords", fmt=_fmt_dict),
+
+        # --- external codes: the executable ---------------------------------
+        Step("command", "text",
+             "Executable (e.g. /path/to/orca or 'mpiexec -n 16 .../pw.x'; "
+             "blank = ASE config / PATH)",
+             applies=_needs_command, default=None, label="Executable command"),
 
         # --- structure ------------------------------------------------------
         Step("start_kind", "select", "Start from?",
@@ -606,7 +659,13 @@ def _build_nvt(state) -> NVTConfig:
         orcasimpleinput=state.get("orcasimpleinput", "B3LYP def2-SVP"),
         orcablocks=state.get("orcablocks"),
         nprocs=state.get("nprocs"),
-        orca_command=state.get("orca_command"),
+        command=state.get("command"),
+        pseudopotentials=state.get("pseudopotentials") or None,
+        pseudo_dir=state.get("pseudo_dir"),
+        ecutwfc=state.get("ecutwfc"),
+        ecutrho=state.get("ecutrho"),
+        kpts=state.get("kpts"),
+        input_data=state.get("input_data") or None,
         structure=path if kind == "structure" else None,
         restart=path if kind == "restart" else None,
         cell=state.get("cell"),

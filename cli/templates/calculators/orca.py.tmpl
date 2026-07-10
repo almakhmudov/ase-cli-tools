@@ -13,9 +13,9 @@ _orca_kwargs = dict(
     orcasimpleinput=ORCASIMPLEINPUT,
     orcablocks=ORCABLOCKS,
 )
-if ORCA_COMMAND:
+if COMMAND:
     # Override the orca binary path programmatically; otherwise ASE finds it via
     # its configfile or your PATH.
     from ase.calculators.orca import OrcaProfile
-    _orca_kwargs["profile"] = OrcaProfile(command=ORCA_COMMAND)
+    _orca_kwargs["profile"] = OrcaProfile(command=COMMAND)
 base_calc = ORCA(**_orca_kwargs)

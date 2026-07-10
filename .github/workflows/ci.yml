@@ -82,8 +82,21 @@ jobs:
             --optimizer fire --fmax 0.02 --nprocs 8 --stdout > /tmp/relax_orca.py
           python -m cli.app relax run --calculator mace --variant mace_off \
             -c mace.model -s mol.xyz --pbc false --optimizer lbfgs --stdout > /tmp/relax_mace.py
+          python -m cli.app sp run --calculator espresso -s NaCl.cif \
+            --cell "5.64 5.64 5.64" --command "mpiexec -n 4 pw.x" \
+            --pseudo-dir /pseudos --pseudo "Na=na.UPF" --pseudo "Cl=cl.UPF" \
+            --ecutwfc 60 --ecutrho 480 --kpts "4 4 4" \
+            --input "occupations=smearing" --stdout > /tmp/qe_sp.py
+          python -m cli.app relax run --calculator espresso -s Fe.cif \
+            --cell "2.87 2.87 2.87" --pseudo "Fe=fe.UPF" --ecutwfc 60 \
+            --kpts "2 2 2" --charge 0 --multiplicity 3 --optimizer lbfgs \
+            --stdout > /tmp/qe_relax.py
+          python -m cli.app md run --job nvt --calculator espresso -s NaCl.cif \
+            --cell "5.64 5.64 5.64" --pseudo "Na=na.UPF" --pseudo "Cl=cl.UPF" \
+            --ecutwfc 60 -n 50 --stdout > /tmp/qe_md.py
           python -m cli.app postprocess wrap in.traj --stdout > /tmp/wrap.py
           python -m py_compile /tmp/nvt.py /tmp/biased.py /tmp/mace.py /tmp/orb.py \
             /tmp/orbmol.py /tmp/grace.py /tmp/langevin.py /tmp/csvr.py /tmp/nve.py \
             /tmp/orca_md.py /tmp/orca_sp.py /tmp/uma_sp.py /tmp/relax_uma.py \
-            /tmp/relax_orca.py /tmp/relax_mace.py /tmp/wrap.py
+            /tmp/relax_orca.py /tmp/relax_mace.py /tmp/qe_sp.py /tmp/qe_relax.py \
+            /tmp/qe_md.py /tmp/wrap.py

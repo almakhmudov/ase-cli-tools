@@ -19,10 +19,10 @@ dynamics**, **single-point** energy & forces and **geometry optimization**
 (from [ACEsuit](https://github.com/ACEsuit/mace)), **Orb**
 (from [orb-models](https://github.com/orbital-materials/orb-models)) and **GRACE**
 (from [tensorpotential](https://github.com/ICAMS/grace-tensorpotential))
-potentials, with optional PLUMED biasing. It also drives the **ORCA** QM code
-(SCF/DFT/…) and can generate **single-point** energy & forces and **geometry
-optimization** jobs for any calculator. More calculators, ensembles and job
-types are on the roadmap.
+potentials, with optional PLUMED biasing. It also drives the **ORCA** and
+**Quantum ESPRESSO** QM codes and can generate **single-point** energy & forces
+and **geometry optimization** jobs for any calculator. More calculators,
+ensembles and job types are on the roadmap.
 
 > **Status:** early prototype. Interfaces may change.
 
@@ -110,8 +110,20 @@ program, which is closed-source but free for academics — register on the
 [ORCA forum](https://orcaforum.kofo.mpg.de/) to download the binaries. There is
 no pip package: install ORCA yourself and make sure ASE can find the `orca`
 binary, either by putting it on your `PATH`, configuring it in ASE's config file,
-or passing `--orca-command /full/path/to/orca` (which builds an `OrcaProfile`).
+or passing `--command /full/path/to/orca` (which builds an `OrcaProfile`).
 ASE is already a base dependency, so nothing else is needed to generate ORCA
+scripts.
+
+### Quantum ESPRESSO backend (optional)
+
+The Quantum ESPRESSO calculator (`--calculator espresso`) talks to the open-source
+[Quantum ESPRESSO](https://www.quantum-espresso.org/) `pw.x` executable, which
+you install yourself (conda-forge `qe`, a distro package, or from source). You
+also need pseudopotential UPF files — a good curated set is
+[SSSP](https://www.materialscloud.org/discover/sssp/table/efficiency). Point the
+tool at both with `--command /path/to/pw.x` (add an `mpiexec -n N` prefix for
+parallel runs) and `--pseudo-dir /path/to/pseudopotentials`, or configure
+`espresso` in ASE's config file and omit both. Only ASE is needed to generate the
 scripts.
 
 ### PLUMED biasing (optional)
@@ -219,6 +231,22 @@ ase-cli-tools sp run --calculator orca -s mol.xyz --pbc false \
 ase-cli-tools md run --job nvt --calculator orca -s mol.xyz --pbc false \
     --orcasimpleinput "BP86 def2-SVP" --nprocs 16 -T 300 -n 500
 
+# Quantum ESPRESSO single point: pseudopotentials + cutoffs + k-points
+ase-cli-tools sp run --calculator espresso -s NaCl.cif --cell "5.64 5.64 5.64" \
+    --command "mpiexec -n 16 /path/to/pw.x" --pseudo-dir /path/to/pseudos \
+    --pseudo "Na=na_pbe_v1.5.uspp.F.UPF" --pseudo "Cl=cl_pbe_v1.4.uspp.F.UPF" \
+    --ecutwfc 60 --ecutrho 480 --kpts "4 4 4" --input "occupations=smearing" \
+    --input "smearing=mv" --input "degauss=0.01"
+
+# QE geometry optimization (same calculator flags, on `relax run`)
+ase-cli-tools relax run --calculator espresso -s NaCl.cif --cell "5.64 5.64 5.64" \
+    --pseudo "Na=na.UPF" --pseudo "Cl=cl.UPF" --ecutwfc 60 --kpts "4 4 4" \
+    --optimizer lbfgs --fmax 0.02
+
+# QE with charge & spin: --multiplicity 3 sets nspin=2, tot_magnetization=2
+ase-cli-tools sp run --calculator espresso -s O2.xyz --cell "12 12 12" \
+    --pseudo "O=o.UPF" --ecutwfc 60 --charge 0 --multiplicity 3
+
 # geometry optimization (positions only): pick the algorithm and force threshold
 ase-cli-tools relax run --calculator uma -c uma.pt -s mol.xyz --pbc false \
     --optimizer bfgs --fmax 0.05
@@ -254,9 +282,10 @@ velocities). For NVT, `--thermostat` picks the thermostat:
 `--seed` sets the RNG seed for the initial Maxwell-Boltzmann velocities (default
 `42`) so a fresh-start run is reproducible.
 
-`--calculator` chooses the backend (`uma`, `mace`, `orb`, `grace`, `orca`), with
-`-c`/`--checkpoint` pointing at that backend's model file where one is needed
-(MACE and UMA need one; Orb, GRACE and ORCA do not).
+`--calculator` chooses the backend (`uma`, `mace`, `orb`, `grace`, `orca`,
+`espresso`), with `-c`/`--checkpoint` pointing at that backend's model file where
+one is needed (MACE and UMA need one; Orb, GRACE, ORCA and Quantum ESPRESSO do
+not — the QM codes use pseudopotentials/basis sets instead).
 Every backend is a family, and **`--variant` (`-t`) picks the family member** —
 its meaning depends on the calculator:
 
@@ -277,8 +306,21 @@ its meaning depends on the calculator:
   `--orcasimpleinput` (the `!` line, default `B3LYP def2-SVP`) and repeated
   `--orcablock` (`% … end` blocks, joined with newlines). `--nprocs N` emits the
   `%pal nprocs N end` block for you, `--charge`/`--multiplicity` go straight to
-  ORCA, and `--orca-command` sets the binary path. Add dispersion in
+  ORCA, and `--command` sets the binary path. Add dispersion in
   `--orcasimpleinput` (e.g. `D3BJ`), not via `--dispersion`.
+- **Quantum ESPRESSO** — plane-wave DFT (`pw.x`); no variants. Repeated
+  `--pseudo "El=file.UPF"` builds the pseudopotential map (required),
+  `--pseudo-dir` locates the UPF files, `--ecutwfc` (Ry, required) and
+  `--ecutrho` set the cutoffs and `--kpts "k1 k2 k3"` the Monkhorst-Pack grid
+  (omit for Γ-only). `--charge`/`--multiplicity` map to QE keywords for you:
+  `--charge` → `tot_charge`, and any non-singlet `--multiplicity` turns on spin
+  polarization (`nspin=2`, `tot_magnetization = multiplicity − 1`; a singlet
+  stays `nspin=1`). Anything else is a repeated `--input "key=value"` (flat
+  `pw.x` keywords ASE routes to the right section — `smearing`, `occupations`,
+  …; an explicit `--input` keyword overrides the auto-set ones). `--command` is
+  the `pw.x` executable (with any `mpiexec` prefix); `--command` and
+  `--pseudo-dir` are given together or not at all. The force/stress flags are
+  added automatically when a job needs them.
 
 Omit `--variant` to take the calculator's default. `--precision` sets the
 floating-point precision for MACE (`float32`/`float64`, default `float64`) and
@@ -324,8 +366,8 @@ Calculators:
 - [x] Orb
 - [x] GRACE
 - [x] ORCA
+- [x] Quantum ESPRESSO
 - [ ] CP2K
-- [ ] Quantum ESPRESSO
 - [ ] VASP
 
 Jobs / ensembles:

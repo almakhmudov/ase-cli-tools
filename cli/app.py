@@ -66,6 +66,16 @@ def _parse_bool(value: str, flag: str) -> bool:
     raise typer.BadParameter(f"{flag} expects True or False (got {value!r}).")
 
 
+def _qe_dicts(pseudo, qe_input):
+    """Parse the repeatable --pseudo / --input flags into dicts, turning a
+    malformed entry into a Typer error."""
+    try:
+        return (generate.parse_pseudopotentials(pseudo),
+                generate.parse_input_data(qe_input))
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc))
+
+
 def _check_calc(cfg: NVTConfig):
     """Validate the calculator selection common to every job and warn about
     options that do not apply to the chosen calculator/variant. Returns the
@@ -93,24 +103,51 @@ def _check_calc(cfg: NVTConfig):
     # them.
     if (not registry.uses_charge_spin(cfg.calculator, cfg.variant)
             and (cfg.charge != 0 or cfg.multiplicity != 1)):
-        typer.secho("Note: --charge/--multiplicity are only used by ORCA, UMA's "
-                    "'omol' task, MACE-POLAR and OrbMol-v2; ignoring them here.",
-                    fg=typer.colors.YELLOW)
+        typer.secho("Note: --charge/--multiplicity are only used by ORCA, Quantum "
+                    "ESPRESSO, UMA's 'omol' task, MACE-POLAR and OrbMol-v2; "
+                    "ignoring them here.", fg=typer.colors.YELLOW)
     if cfg.external_field and "EXTERNAL_FIELD" not in comp["params"]:
         typer.secho("Note: --external-field applies only to MACE-POLAR; "
                     "ignoring it here.", fg=typer.colors.YELLOW)
+
+    # External-code executable, shared by ORCA and Quantum ESPRESSO.
+    if cfg.command and "COMMAND" not in comp["params"]:
+        typer.secho("Note: --command applies only to external codes (ORCA, "
+                    "Quantum ESPRESSO); ignoring it here.", fg=typer.colors.YELLOW)
 
     # ORCA-specific flags: warn when used with a non-ORCA calculator, and remind
     # ORCA users that dispersion goes in --orcasimpleinput (e.g. 'D3BJ'), not the
     # MLIP --dispersion flag.
     is_orca = cfg.calculator == "orca"
-    if not is_orca and (cfg.orcablocks or cfg.nprocs or cfg.orca_command):
-        typer.secho("Note: --orcablock/--nprocs/--orca-command apply only to the "
-                    "ORCA calculator; ignoring them here.", fg=typer.colors.YELLOW)
+    if not is_orca and (cfg.orcablocks or cfg.nprocs):
+        typer.secho("Note: --orcablock/--nprocs apply only to the ORCA "
+                    "calculator; ignoring them here.", fg=typer.colors.YELLOW)
     if is_orca and cfg.dispersion:
         typer.secho("Note: for ORCA, add dispersion to --orcasimpleinput (e.g. "
                     "'B3LYP def2-SVP D3BJ'); --dispersion is ignored here.",
                     fg=typer.colors.YELLOW)
+
+    # Quantum ESPRESSO-specific flags and required inputs.
+    is_qe = cfg.calculator == "espresso"
+    qe_used = (cfg.pseudopotentials or cfg.pseudo_dir or cfg.ecutwfc is not None
+               or cfg.ecutrho is not None or cfg.kpts or cfg.input_data)
+    if not is_qe and qe_used:
+        typer.secho("Note: --pseudo/--pseudo-dir/--ecutwfc/--ecutrho/--kpts/"
+                    "--input apply only to Quantum ESPRESSO; ignoring them here.",
+                    fg=typer.colors.YELLOW)
+    if is_qe:
+        if not cfg.pseudopotentials:
+            raise typer.BadParameter("Quantum ESPRESSO needs at least one "
+                                     "--pseudo 'Element=file.UPF'.")
+        has_ecutwfc = (cfg.ecutwfc is not None
+                       or (cfg.input_data and "ecutwfc" in cfg.input_data))
+        if not has_ecutwfc:
+            raise typer.BadParameter("Quantum ESPRESSO needs --ecutwfc (Ry) "
+                                     "(or set it via --input 'ecutwfc=...').")
+        if bool(cfg.command) != bool(cfg.pseudo_dir):
+            raise typer.BadParameter("set BOTH --command and --pseudo-dir, or "
+                                     "neither (and configure espresso in the ASE "
+                                     "config file).")
     return comp
 
 
@@ -231,10 +268,25 @@ def md_run(
     nprocs: Optional[int] = typer.Option(
         None, "--nprocs",
         help="ORCA only: MPI cores, emitted as '%pal nprocs N end'."),
-    orca_command: Optional[str] = typer.Option(
-        None, "--orca-command",
-        help="ORCA only: full path to the orca binary (OrcaProfile). Omit to use "
-             "ASE's configfile / PATH."),
+    pseudo: Optional[List[str]] = typer.Option(
+        None, "--pseudo",
+        help="QE only: 'Element=file.UPF'; repeat once per element (required)."),
+    pseudo_dir: Optional[str] = typer.Option(
+        None, "--pseudo-dir", help="QE only: directory of UPF pseudopotentials."),
+    ecutwfc: Optional[float] = typer.Option(
+        None, "--ecutwfc", help="QE only: plane-wave cutoff (Ry; required)."),
+    ecutrho: Optional[float] = typer.Option(
+        None, "--ecutrho", help="QE only: charge-density cutoff (Ry)."),
+    kpts: Optional[str] = typer.Option(
+        None, "--kpts",
+        help="QE only: Monkhorst-Pack grid 'k1 k2 k3' (omit = Gamma only)."),
+    qe_input: Optional[List[str]] = typer.Option(
+        None, "--input",
+        help="QE only: extra pw.x keyword 'key=value'; repeat for several."),
+    command: Optional[str] = typer.Option(
+        None, "--command",
+        help="ORCA/QE only: executable (with any launcher prefix, e.g. "
+             "'mpiexec -n 16 /path/to/pw.x'). Omit for ASE's config / PATH."),
     structure: Optional[str] = typer.Option(None, "--structure", "-s",
                                             help="Starting structure or trajectory."),
     restart: Optional[str] = typer.Option(None, "--restart", "-r",
@@ -282,6 +334,7 @@ def md_run(
     """Generate an MD script. Biasing is an option (--plumed), not a separate job."""
     if job not in _MD_JOBS:
         raise typer.BadParameter(f"unknown job {job!r}; choose from {_MD_JOBS}.")
+    _pseudos, _input_data = _qe_dicts(pseudo, qe_input)
     cfg = NVTConfig(
         checkpoint=checkpoint, calculator=calculator, variant=variant,
         job=job, precision=precision,
@@ -289,7 +342,9 @@ def md_run(
         external_field=external_field,
         orcasimpleinput=orcasimpleinput,
         orcablocks="\n".join(orcablock) if orcablock else None,
-        nprocs=nprocs, orca_command=orca_command,
+        nprocs=nprocs, command=command,
+        pseudopotentials=_pseudos, pseudo_dir=pseudo_dir,
+        ecutwfc=ecutwfc, ecutrho=ecutrho, kpts=kpts, input_data=_input_data,
         structure=structure, restart=restart,
         cell=cell, pbc=pbc, charge=charge, multiplicity=multiplicity,
         temperature=temperature, timestep=timestep, nsteps=nsteps, seed=seed,
@@ -328,8 +383,22 @@ def sp_run(
         help="ORCA only: one '% ... end' block; repeat for several."),
     nprocs: Optional[int] = typer.Option(
         None, "--nprocs", help="ORCA only: MPI cores ('%pal nprocs N end')."),
-    orca_command: Optional[str] = typer.Option(
-        None, "--orca-command", help="ORCA only: full path to the orca binary."),
+    pseudo: Optional[List[str]] = typer.Option(
+        None, "--pseudo",
+        help="QE only: 'Element=file.UPF'; repeat once per element (required)."),
+    pseudo_dir: Optional[str] = typer.Option(
+        None, "--pseudo-dir", help="QE only: directory of UPF pseudopotentials."),
+    ecutwfc: Optional[float] = typer.Option(
+        None, "--ecutwfc", help="QE only: plane-wave cutoff (Ry; required)."),
+    ecutrho: Optional[float] = typer.Option(
+        None, "--ecutrho", help="QE only: charge-density cutoff (Ry)."),
+    kpts: Optional[str] = typer.Option(
+        None, "--kpts", help="QE only: Monkhorst-Pack grid 'k1 k2 k3' (omit = Gamma)."),
+    qe_input: Optional[List[str]] = typer.Option(
+        None, "--input", help="QE only: extra pw.x keyword 'key=value'; repeatable."),
+    command: Optional[str] = typer.Option(
+        None, "--command",
+        help="ORCA/QE only: executable (with launcher prefix). Omit for ASE config."),
     structure: str = typer.Option(None, "--structure", "-s",
                                   help="Structure to evaluate."),
     cell: Optional[str] = typer.Option(None, help='Cell, e.g. "20 20 20".'),
@@ -349,6 +418,7 @@ def sp_run(
     run: bool = typer.Option(False, "--run", help="Run the generated script after writing."),
 ):
     """Generate a single-point energy/forces script for any calculator."""
+    _pseudos, _input_data = _qe_dicts(pseudo, qe_input)
     cfg = NVTConfig(
         checkpoint=checkpoint, calculator=calculator, variant=variant,
         job="singlepoint", precision=precision,
@@ -356,7 +426,9 @@ def sp_run(
         external_field=external_field,
         orcasimpleinput=orcasimpleinput,
         orcablocks="\n".join(orcablock) if orcablock else None,
-        nprocs=nprocs, orca_command=orca_command,
+        nprocs=nprocs, command=command,
+        pseudopotentials=_pseudos, pseudo_dir=pseudo_dir,
+        ecutwfc=ecutwfc, ecutrho=ecutrho, kpts=kpts, input_data=_input_data,
         structure=structure, cell=cell, pbc=pbc,
         charge=charge, multiplicity=multiplicity, device=device,
         sp_forces=_parse_bool(forces, "--forces"), sp_output=sp_output,
@@ -390,8 +462,22 @@ def relax_run(
         help="ORCA only: one '% ... end' block; repeat for several."),
     nprocs: Optional[int] = typer.Option(
         None, "--nprocs", help="ORCA only: MPI cores ('%pal nprocs N end')."),
-    orca_command: Optional[str] = typer.Option(
-        None, "--orca-command", help="ORCA only: full path to the orca binary."),
+    pseudo: Optional[List[str]] = typer.Option(
+        None, "--pseudo",
+        help="QE only: 'Element=file.UPF'; repeat once per element (required)."),
+    pseudo_dir: Optional[str] = typer.Option(
+        None, "--pseudo-dir", help="QE only: directory of UPF pseudopotentials."),
+    ecutwfc: Optional[float] = typer.Option(
+        None, "--ecutwfc", help="QE only: plane-wave cutoff (Ry; required)."),
+    ecutrho: Optional[float] = typer.Option(
+        None, "--ecutrho", help="QE only: charge-density cutoff (Ry)."),
+    kpts: Optional[str] = typer.Option(
+        None, "--kpts", help="QE only: Monkhorst-Pack grid 'k1 k2 k3' (omit = Gamma)."),
+    qe_input: Optional[List[str]] = typer.Option(
+        None, "--input", help="QE only: extra pw.x keyword 'key=value'; repeatable."),
+    command: Optional[str] = typer.Option(
+        None, "--command",
+        help="ORCA/QE only: executable (with launcher prefix). Omit for ASE config."),
     structure: str = typer.Option(None, "--structure", "-s",
                                   help="Structure to relax."),
     cell: Optional[str] = typer.Option(None, help='Cell, e.g. "20 20 20".'),
@@ -413,6 +499,7 @@ def relax_run(
     run: bool = typer.Option(False, "--run", help="Run the generated script after writing."),
 ):
     """Generate a geometry-optimization script (positions only) for any calculator."""
+    _pseudos, _input_data = _qe_dicts(pseudo, qe_input)
     cfg = NVTConfig(
         checkpoint=checkpoint, calculator=calculator, variant=variant,
         job="relax", precision=precision,
@@ -420,7 +507,9 @@ def relax_run(
         external_field=external_field,
         orcasimpleinput=orcasimpleinput,
         orcablocks="\n".join(orcablock) if orcablock else None,
-        nprocs=nprocs, orca_command=orca_command,
+        nprocs=nprocs, command=command,
+        pseudopotentials=_pseudos, pseudo_dir=pseudo_dir,
+        ecutwfc=ecutwfc, ecutrho=ecutrho, kpts=kpts, input_data=_input_data,
         structure=structure, cell=cell, pbc=pbc,
         charge=charge, multiplicity=multiplicity, device=device,
         optimizer=optimizer, fmax=fmax, nsteps=nsteps,

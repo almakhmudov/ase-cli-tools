@@ -156,11 +156,26 @@ CALCULATORS = {
         # plus the system's charge & spin, which ASE passes straight to the ORCA
         # constructor (so ``uses_charge_spin`` is set to add CHARGE/MULTIPLICITY
         # to the parameter block, but the calculator reads them as constructor
-        # args, not from atoms.info). ORCA_COMMAND optionally overrides the orca
-        # binary path via an OrcaProfile. Being variant-less, it has no
-        # "variants" dict; ``resolve_variant`` returns this spec directly.
-        "params": ["ORCASIMPLEINPUT", "ORCABLOCKS", "ORCA_COMMAND"],
+        # args, not from atoms.info). COMMAND optionally overrides the orca binary
+        # path via an OrcaProfile. Being variant-less, it has no "variants" dict;
+        # ``resolve_variant`` returns this spec directly.
+        "params": ["ORCASIMPLEINPUT", "ORCABLOCKS", "COMMAND"],
         "template": "calculators/orca.py.tmpl",
+        "uses_charge_spin": True,
+    },
+    "espresso": {
+        "label": "Quantum ESPRESSO (QM)",
+        # Plane-wave DFT code. Variant-less like ORCA. Configured by a
+        # PSEUDOPOTENTIALS dict (element -> UPF file in PSEUDO_DIR), a flat
+        # INPUT_DATA dict of pw.x keywords (ASE routes each to its &section) and a
+        # KPTS Monkhorst-Pack grid. COMMAND + PSEUDO_DIR build an EspressoProfile
+        # (both or neither). ``uses_charge_spin`` adds CHARGE/MULTIPLICITY to the
+        # parameter block; the template maps them to QE keywords (tot_charge /
+        # nspin / tot_magnetization). It reads them as pw.x keywords, not from
+        # atoms.info, so the template omits the $CHARGE_SPIN placeholder.
+        "params": ["PSEUDOPOTENTIALS", "PSEUDO_DIR", "INPUT_DATA", "KPTS",
+                   "COMMAND"],
+        "template": "calculators/espresso.py.tmpl",
         "uses_charge_spin": True,
     },
 }
