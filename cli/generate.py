@@ -72,6 +72,41 @@ def _traj_paths(cfg: NVTConfig):
     return f"{stem}.{ext}", f"{stem}_wrapped.{ext}", cfg.traj_format
 
 
+def _orca_blocks(cfg: NVTConfig) -> str:
+    """Assemble ORCA's ``orcablocks`` string: a leading ``%pal nprocs N end``
+    when parallelism was requested, then the user's own ``% ... end`` text.
+    Several blocks are just newline-separated -- ASE takes one string."""
+    blocks = []
+    if cfg.nprocs:
+        blocks.append(f"%pal nprocs {cfg.nprocs} end")
+    if cfg.orcablocks:
+        blocks.append(cfg.orcablocks)
+    return "\n".join(blocks)
+
+
+def _orca_simpleinput(orcasimpleinput: str, needs_forces: bool) -> str:
+    """ORCA only writes a gradient when the '!' line asks for one, and ASE reads
+    forces from that gradient file. Append ``EnGrad`` when forces are needed (any
+    MD step; a single point with forces on) and the user has not already
+    requested a gradient, so forces 'just work' rather than coming back empty."""
+    if not needs_forces or "engrad" in orcasimpleinput.lower():
+        return orcasimpleinput
+    return f"{orcasimpleinput} EnGrad".strip()
+
+
+def _charge_spin_block(uses_cs: bool) -> str:
+    """The atoms.info charge/spin lines spliced into calculators that read them
+    from ``atoms.info`` via the ``$CHARGE_SPIN`` placeholder (UMA). Calculators
+    that take charge/spin as constructor args (ORCA) omit the placeholder, so the
+    block is silently dropped by ``safe_substitute``."""
+    if not uses_cs:
+        return ""
+    return ("\n# This calculator uses the system's total charge and spin "
+            "multiplicity.\n"
+            'atoms.info["charge"] = CHARGE\n'
+            'atoms.info["spin"] = MULTIPLICITY\n')
+
+
 # --------------------------------------------------------------------------- #
 # parameter rendering
 # --------------------------------------------------------------------------- #
@@ -91,6 +126,11 @@ def _param_values(cfg: NVTConfig, traj_path: str, wrapped_path: str) -> Dict[str
         "PRECISION": repr(cfg.precision),
         "DISPERSION": str(cfg.dispersion),
         "EXTERNAL_FIELD": repr(_parse_vec(cfg.external_field)),
+        "ORCASIMPLEINPUT": repr(cfg.orcasimpleinput),
+        "ORCABLOCKS": repr(_orca_blocks(cfg)),
+        "ORCA_COMMAND": repr(cfg.orca_command),
+        "SP_FORCES": str(cfg.sp_forces),
+        "SP_OUTPUT": repr(cfg.sp_output),
         "TEMPERATURE": str(cfg.temperature),
         "TIMESTEP": str(cfg.timestep),
         "NSTEPS": str(cfg.nsteps),
@@ -101,6 +141,7 @@ def _param_values(cfg: NVTConfig, traj_path: str, wrapped_path: str) -> Dict[str
         "FRICTION": repr(cfg.friction),
         "TAUT": repr(cfg.taut),
         "SEED": str(cfg.seed),
+        "FMAX": str(cfg.fmax),
         "TRAJ": repr(traj_path),
         "LOG": repr(cfg.log),
         "LAST_FRAME": repr(cfg.last_frame),
@@ -152,6 +193,11 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     traj_path, wrapped_path, fmt = _traj_paths(cfg)
     values = _param_values(cfg, traj_path, wrapped_path)
 
+    # MD needs forces at every step; make ORCA request a gradient.
+    if cfg.calculator == "orca":
+        values["ORCASIMPLEINPUT"] = repr(
+            _orca_simpleinput(cfg.orcasimpleinput, needs_forces=True))
+
     # Resolve the chosen variant to its component skeleton (every calculator is a
     # variant family). An unknown variant raises KeyError here.
     variant_name, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
@@ -172,13 +218,7 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
     # placeholder (UMA). We always compute the block and hand it to
     # safe_substitute; skeletons without the placeholder simply ignore it.
     uses_cs = bool(comp.get("uses_charge_spin"))
-    charge_spin_block = (
-        "\n# This calculator uses the system's total charge and spin "
-        "multiplicity.\n"
-        'atoms.info["charge"] = CHARGE\n'
-        'atoms.info["spin"] = MULTIPLICITY\n'
-        if uses_cs else ""
-    )
+    charge_spin_block = _charge_spin_block(uses_cs)
 
     # Resolve the dynamics driver: a thermostat for a thermostatted job (NVT), or
     # a fixed integrator (NVE). The driver skeleton builds the ASE ``dyn`` object
@@ -236,6 +276,121 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
 
 # Backwards-compatible alias.
 generate_nvt_script = generate_md_script
+
+
+def generate_singlepoint_script(cfg: NVTConfig,
+                                script_name: str = "run_sp.py") -> str:
+    """Assemble a single-point (energy/forces) script.
+
+    Shares the header + preamble + calculator + attach with the MD path, but the
+    job tail just evaluates the calculator and writes the results -- no
+    velocities, thermostat or trajectory. Works with any calculator (the ORCA
+    QM code is its natural pairing, but an MLIP single point is valid too)."""
+    if cfg.calculator not in registry.CALCULATORS:
+        raise KeyError(f"unknown calculator {cfg.calculator!r}; "
+                       f"available: {sorted(registry.CALCULATORS)}")
+    if cfg.job not in registry.JOBS:
+        raise KeyError(f"unknown job {cfg.job!r}; "
+                       f"available: {sorted(registry.JOBS)}")
+
+    calc = registry.CALCULATORS[cfg.calculator]
+    job = registry.JOBS[cfg.job]
+    traj_path, wrapped_path, _ = _traj_paths(cfg)
+    values = _param_values(cfg, traj_path, wrapped_path)
+
+    # Make ORCA request a gradient only when forces are actually wanted, so an
+    # energy-only single point stays cheap.
+    if cfg.calculator == "orca":
+        values["ORCASIMPLEINPUT"] = repr(
+            _orca_simpleinput(cfg.orcasimpleinput, needs_forces=cfg.sp_forces))
+
+    variant_name, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
+    for name, value in comp.get("values", {}).items():
+        values[name] = repr(value)
+    pspec = comp.get("precision")
+    if pspec:
+        values["PRECISION"] = repr(cfg.precision or pspec["default"])
+
+    uses_cs = bool(comp.get("uses_charge_spin"))
+    charge_spin_block = _charge_spin_block(uses_cs)
+
+    keys = list(registry.SHARED_PARAMS)
+    keys += comp["params"]
+    if uses_cs and "CHARGE" not in comp["params"]:
+        keys += ["CHARGE", "MULTIPLICITY"]
+    keys += job["params"]
+    params_block = _render_params(keys, values, None)
+
+    title = f"{job['label']} with {comp.get('label', calc['label'])}"
+
+    parts = [
+        _header(title, script_name),
+        Template(_load("preamble.py.tmpl")).substitute(PARAMS=params_block),
+        Template(_load(comp["template"])).safe_substitute(
+            CHARGE_SPIN=charge_spin_block),
+        _load("attach/plain.py.tmpl"),
+        _load(job["template"]),
+    ]
+    return "".join(parts)
+
+
+def generate_relax_script(cfg: NVTConfig,
+                          script_name: str = "run_relax.py") -> str:
+    """Assemble a geometry-optimization script.
+
+    Like single-point it shares the header/preamble/calculator/attach, then
+    splices the chosen ASE optimizer (BFGS/LBFGS/FIRE) into the relax tail and
+    runs to the force threshold. Forces are needed every step, so ORCA is made
+    to request a gradient."""
+    if cfg.calculator not in registry.CALCULATORS:
+        raise KeyError(f"unknown calculator {cfg.calculator!r}; "
+                       f"available: {sorted(registry.CALCULATORS)}")
+    if cfg.job not in registry.JOBS:
+        raise KeyError(f"unknown job {cfg.job!r}; "
+                       f"available: {sorted(registry.JOBS)}")
+
+    calc = registry.CALCULATORS[cfg.calculator]
+    job = registry.JOBS[cfg.job]
+    traj_path, wrapped_path, _ = _traj_paths(cfg)
+    values = _param_values(cfg, traj_path, wrapped_path)
+
+    # A relaxation evaluates forces at every step; make ORCA request a gradient.
+    if cfg.calculator == "orca":
+        values["ORCASIMPLEINPUT"] = repr(
+            _orca_simpleinput(cfg.orcasimpleinput, needs_forces=True))
+
+    variant_name, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
+    for name, value in comp.get("values", {}).items():
+        values[name] = repr(value)
+    pspec = comp.get("precision")
+    if pspec:
+        values["PRECISION"] = repr(cfg.precision or pspec["default"])
+
+    uses_cs = bool(comp.get("uses_charge_spin"))
+    charge_spin_block = _charge_spin_block(uses_cs)
+
+    # Resolve the optimizer algorithm (the relax counterpart of a thermostat).
+    opt_name, opt = registry.resolve_optimizer(cfg.job, cfg.optimizer)
+
+    keys = list(registry.SHARED_PARAMS)
+    keys += comp["params"]
+    if uses_cs and "CHARGE" not in comp["params"]:
+        keys += ["CHARGE", "MULTIPLICITY"]
+    keys += job["params"]
+    params_block = _render_params(keys, values, None)
+
+    title = (f"{job['label']} ({opt['label']}) with "
+             f"{comp.get('label', calc['label'])}")
+
+    parts = [
+        _header(title, script_name),
+        Template(_load("preamble.py.tmpl")).substitute(PARAMS=params_block),
+        Template(_load(comp["template"])).safe_substitute(
+            CHARGE_SPIN=charge_spin_block),
+        _load("attach/plain.py.tmpl"),
+        Template(_load(job["template"])).substitute(OPTIMIZER=opt["class"]),
+    ]
+    return "".join(parts)
 
 
 def generate_wrap_script(cfg: WrapConfig, script_name: str = "run_wrap.py") -> str:

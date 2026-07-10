@@ -48,15 +48,18 @@ def backup_if_exists(path):
 device = DEVICE
 if device == "auto":
     # Torch-based backends (UMA, MACE, Orb) decide the device from torch;
-    # TensorFlow-based ones (GRACE) from tf. Fall back to CPU if neither is here.
+    # TensorFlow-based ones (GRACE) from tf. Fall back to CPU if neither is here
+    # or the probe fails -- calculators that ignore the device (e.g. ORCA) then
+    # just run regardless of what is installed. Catch broadly on purpose: a
+    # broken/partial torch install should degrade to CPU, not crash the job.
     try:
         import torch
         device = "cuda" if torch.cuda.is_available() else "cpu"
-    except ImportError:
+    except Exception:
         try:
             import tensorflow as tf
             device = "cuda" if tf.config.list_physical_devices("GPU") else "cpu"
-        except ImportError:
+        except Exception:
             device = "cpu"
 print(f"Using device: {device}", flush=True)
 

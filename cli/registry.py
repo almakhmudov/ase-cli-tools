@@ -148,6 +148,21 @@ CALCULATORS = {
         },
         "default_variant": "GRACE-1L-OMAT-medium-ft-E",
     },
+    "orca": {
+        "label": "ORCA (QM)",
+        # ORCA is a QM code, not an MLIP: no model file, no variant family and no
+        # selectable precision. It is configured by two free-text strings --
+        # ORCASIMPLEINPUT (the "!" line) and ORCABLOCKS (the "% ... end" text) --
+        # plus the system's charge & spin, which ASE passes straight to the ORCA
+        # constructor (so ``uses_charge_spin`` is set to add CHARGE/MULTIPLICITY
+        # to the parameter block, but the calculator reads them as constructor
+        # args, not from atoms.info). ORCA_COMMAND optionally overrides the orca
+        # binary path via an OrcaProfile. Being variant-less, it has no
+        # "variants" dict; ``resolve_variant`` returns this spec directly.
+        "params": ["ORCASIMPLEINPUT", "ORCABLOCKS", "ORCA_COMMAND"],
+        "template": "calculators/orca.py.tmpl",
+        "uses_charge_spin": True,
+    },
 }
 
 
@@ -209,6 +224,32 @@ THERMOSTATS = {
 }
 
 
+# --- optimizers (the algorithm for a geometry-optimization job) ------------ #
+# A relax job picks one of these with ``--optimizer``. They share one template
+# and differ only by the ASE optimizer class spliced into it, so each entry just
+# names that class (all live in ``ase.optimize``). Adding one is a single entry.
+OPTIMIZERS = {
+    "bfgs":  {"label": "BFGS",  "class": "BFGS"},
+    "lbfgs": {"label": "LBFGS", "class": "LBFGS"},
+    "fire":  {"label": "FIRE",  "class": "FIRE"},
+}
+
+
+def resolve_optimizer(job: str, optimizer: "str | None" = None):
+    """Return ``(optimizer_name, optimizer_spec)`` for a job, or ``(None, None)``
+    for jobs without an ``optimizers`` dict."""
+    spec = JOBS[job]
+    optimizers = spec.get("optimizers")
+    if not optimizers:
+        return None, None
+    name = (optimizer or spec.get("default_optimizer")
+            or next(iter(optimizers)))
+    if name not in optimizers:
+        raise KeyError(f"unknown optimizer {name!r} for job {job!r}; "
+                       f"available: {sorted(optimizers)}")
+    return name, optimizers[name]
+
+
 def resolve_thermostat(job: str, thermostat: "str | None" = None):
     """Return ``(thermostat_name, thermostat_spec)`` for a job.
 
@@ -252,7 +293,28 @@ JOBS = {
             "TRAJ", "LOG", "LAST_FRAME",
         ],
     },
-    # Future: "npt": {...}, "relax": {...}
+    "singlepoint": {
+        "label": "Single-point energy & forces",
+        "category": "singlepoint",
+        "template": "jobs/singlepoint.py.tmpl",
+        # No dynamics: just evaluate the calculator on the loaded structure and
+        # write the results. SP_FORCES toggles the (optional) force/stress
+        # evaluation; SP_OUTPUT names the extended-xyz results file.
+        "params": ["SP_FORCES", "SP_OUTPUT"],
+    },
+    "relax": {
+        "label": "Geometry optimization",
+        "category": "relax",
+        "template": "jobs/relax.py.tmpl",
+        # The optimizer algorithm is chosen with ``--optimizer`` (like the NVT
+        # thermostat); its class name is spliced into the template. FMAX is the
+        # force-convergence threshold, NSTEPS the iteration cap. Positions only
+        # (cell relaxation needs a Filter -- a future addition).
+        "optimizers": OPTIMIZERS,
+        "default_optimizer": "bfgs",
+        "params": ["FMAX", "NSTEPS", "TRAJ", "LOG", "LAST_FRAME"],
+    },
+    # Future: "npt": {...}
 }
 
 # --- optional features layered onto a job ---------------------------------- #

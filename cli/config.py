@@ -12,12 +12,18 @@ from typing import Optional
 
 
 @dataclass
-class NVTConfig:
-    """An MD job description. Which calculator and job skeleton are assembled is
+class JobConfig:
+    """A job description. Which calculator and job skeleton are assembled is
     chosen by name from the registry, so this stays valid as new components are
-    added (e.g. calculator='mace', job='npt')."""
+    added (e.g. calculator='mace', job='npt', or job='singlepoint').
 
-    checkpoint: str                      # calculator checkpoint (.pt) -- required
+    It is a superset of the fields every job needs: an MD job reads the dynamics
+    fields (temperature, timestep, thermostat, ...) and ignores ``sp_output``; a
+    single-point job reads only the calculator + structure fields and ignores the
+    dynamics ones. Fields a given job does not use simply are not rendered into
+    its script (the registry lists each job's parameter names)."""
+
+    checkpoint: Optional[str] = None     # calculator checkpoint (.pt); not all need one
     structure: Optional[str] = None      # starting structure / trajectory
     restart: Optional[str] = None        # restart trajectory (positions+velocities)
 
@@ -34,6 +40,16 @@ class NVTConfig:
     dispersion: bool = False         # MACE-MP / Orb-v3: D3 dispersion correction
     external_field: Optional[str] = None  # MACE-POLAR: "Ex Ey Ez" (optional)
     device: str = "auto"
+
+    # ORCA (QM) calculator. orcasimpleinput is the "!" line; orcablocks is the
+    # "% ... end" text (already newline-joined when several blocks are given).
+    # nprocs, when set, is emitted as a leading "%pal nprocs N end" block, so the
+    # user never hand-writes it. orca_command overrides the orca binary path via
+    # an OrcaProfile (None -> ASE's configfile / PATH).
+    orcasimpleinput: str = "B3LYP def2-SVP"
+    orcablocks: Optional[str] = None
+    nprocs: Optional[int] = None
+    orca_command: Optional[str] = None
 
     cell: Optional[str] = None           # "a b c" | "a b c al be ga" | 9 values
     pbc: str = "true"
@@ -56,17 +72,34 @@ class NVTConfig:
     taut: Optional[float] = None         # CSVR coupling time (fs); None -> auto
     seed: int = 42
 
+    # Geometry optimization (relax job). optimizer picks the ASE algorithm; None
+    # -> the job's default. fmax is the convergence threshold: the run stops when
+    # the max force on any atom falls below it (eV/A). nsteps caps the iterations.
+    optimizer: Optional[str] = None      # bfgs | lbfgs | fire
+    fmax: float = 0.05
+
     # Biasing (PLUMED)
     plumed: Optional[str] = None
     plumed_log: str = "plumed.log"
     prev_steps: Optional[int] = None
 
-    # Output
+    # Output (MD)
     traj: str = "equil"
     traj_format: str = "traj"
     wrap: bool = False
     log: str = "equil.log"
     last_frame: str = "last_frame.xyz"
+
+    # Output (single-point): results written as extended-xyz with a
+    # SinglePointCalculator holding the requested properties. sp_forces adds
+    # forces (and stress when periodic); leave it off for an energy-only run,
+    # which is cheaper for QM codes.
+    sp_forces: bool = True
+    sp_output: str = "singlepoint.extxyz"
+
+
+# Legacy name kept for the flag/wizard front-ends that import it.
+NVTConfig = JobConfig
 
 
 @dataclass

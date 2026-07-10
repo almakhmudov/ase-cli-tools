@@ -38,6 +38,8 @@ jobs:
         run: |
           python -m cli.app --help
           python -m cli.app md run --help
+          python -m cli.app sp run --help
+          python -m cli.app relax run --help
           python -m cli.app postprocess wrap --help
 
       - name: Generated scripts are valid Python
@@ -65,7 +67,23 @@ jobs:
             -s in.xyz --cell "20 20 20" --taut 80 --stdout > /tmp/csvr.py
           python -m cli.app md run --job nve -c model.pt -s in.xyz \
             --cell "20 20 20" --stdout > /tmp/nve.py
+          python -m cli.app md run --job nvt --calculator orca -s mol.xyz \
+            --pbc false --charge 0 --multiplicity 1 --nprocs 8 \
+            --orcasimpleinput "BP86 def2-SVP" --stdout > /tmp/orca_md.py
+          python -m cli.app sp run --calculator orca -s mol.xyz --pbc false \
+            --nprocs 16 --orcasimpleinput "B3LYP def2-TZVP D3BJ" \
+            --orcablock "%scf maxiter 300 end" --orcablock "%method integrationgrid 3 end" \
+            --stdout > /tmp/orca_sp.py
+          python -m cli.app sp run --calculator uma -c model.pt -s mol.xyz \
+            --pbc false --forces False --stdout > /tmp/uma_sp.py
+          python -m cli.app relax run --calculator uma -c model.pt -s mol.xyz \
+            --pbc false --optimizer bfgs --fmax 0.05 --stdout > /tmp/relax_uma.py
+          python -m cli.app relax run --calculator orca -s mol.xyz --pbc false \
+            --optimizer fire --fmax 0.02 --nprocs 8 --stdout > /tmp/relax_orca.py
+          python -m cli.app relax run --calculator mace --variant mace_off \
+            -c mace.model -s mol.xyz --pbc false --optimizer lbfgs --stdout > /tmp/relax_mace.py
           python -m cli.app postprocess wrap in.traj --stdout > /tmp/wrap.py
           python -m py_compile /tmp/nvt.py /tmp/biased.py /tmp/mace.py /tmp/orb.py \
             /tmp/orbmol.py /tmp/grace.py /tmp/langevin.py /tmp/csvr.py /tmp/nve.py \
-            /tmp/wrap.py
+            /tmp/orca_md.py /tmp/orca_sp.py /tmp/uma_sp.py /tmp/relax_uma.py \
+            /tmp/relax_orca.py /tmp/relax_mace.py /tmp/wrap.py

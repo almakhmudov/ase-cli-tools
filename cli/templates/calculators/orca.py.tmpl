@@ -1,0 +1,21 @@
+
+# --- calculator: ORCA (QM) --------------------------------------------------
+# ORCA is an external program: ASE writes an input file, runs the orca binary
+# and parses its output. ORCASIMPLEINPUT is the "!" line (method, basis, ...);
+# ORCABLOCKS is the "% ... end" text (already newline-joined, with a leading
+# "%pal nprocs N end" when parallelism was requested). Charge and spin
+# multiplicity are passed straight to the constructor.
+from ase.calculators.orca import ORCA
+
+_orca_kwargs = dict(
+    charge=CHARGE,
+    mult=MULTIPLICITY,
+    orcasimpleinput=ORCASIMPLEINPUT,
+    orcablocks=ORCABLOCKS,
+)
+if ORCA_COMMAND:
+    # Override the orca binary path programmatically; otherwise ASE finds it via
+    # its configfile or your PATH.
+    from ase.calculators.orca import OrcaProfile
+    _orca_kwargs["profile"] = OrcaProfile(command=ORCA_COMMAND)
+base_calc = ORCA(**_orca_kwargs)

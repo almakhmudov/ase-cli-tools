@@ -13,12 +13,15 @@ your work stays reproducible.
 The building blocks are predefined and tested, and assembled from modular
 skeletons — in the spirit of ASE's own swappable calculators and dynamics. Now
 the toolkit covers **NVT** (Nose-Hoover, Langevin or CSVR) and **NVE molecular
-dynamics** with the **UMA**
+dynamics**, **single-point** energy & forces and **geometry optimization**
+(BFGS/LBFGS/FIRE), with the **UMA**
 (from [FairChem](https://github.com/facebookresearch/fairchem)), **MACE**
 (from [ACEsuit](https://github.com/ACEsuit/mace)), **Orb**
 (from [orb-models](https://github.com/orbital-materials/orb-models)) and **GRACE**
 (from [tensorpotential](https://github.com/ICAMS/grace-tensorpotential))
-potentials, with optional PLUMED biasing; more calculators, ensembles and job
+potentials, with optional PLUMED biasing. It also drives the **ORCA** QM code
+(SCF/DFT/…) and can generate **single-point** energy & forces and **geometry
+optimization** jobs for any calculator. More calculators, ensembles and job
 types are on the roadmap.
 
 > **Status:** early prototype. Interfaces may change.
@@ -100,6 +103,17 @@ pip install tensorpotential
 # GPU TensorFlow (optional): pip install "tensorflow[and-cuda]<2.20"
 ```
 
+### ORCA backend (optional)
+
+The ORCA calculator (`--calculator orca`) talks to the **ORCA** quantum-chemistry
+program, which is closed-source but free for academics — register on the
+[ORCA forum](https://orcaforum.kofo.mpg.de/) to download the binaries. There is
+no pip package: install ORCA yourself and make sure ASE can find the `orca`
+binary, either by putting it on your `PATH`, configuring it in ASE's config file,
+or passing `--orca-command /full/path/to/orca` (which builds an `OrcaProfile`).
+ASE is already a base dependency, so nothing else is needed to generate ORCA
+scripts.
+
 ### PLUMED biasing (optional)
 
 Biased runs (`--plumed`) need PLUMED's Python interface, easiest from
@@ -124,8 +138,8 @@ its variant (the family member — a MACE/Orb variant, a UMA head, or a GRACE
 model) and, where it applies, the precision from menus, then type the remaining
 parameters — periodicity, cell, temperature, timestep, steps, recording interval
 and so on. Every typed prompt shows its default in parentheses and accepts a
-blank to use it. Charge and spin are only asked when the chosen variant uses them
-(UMA `omol`, MACE-POLAR and OrbMol-v2), and the Nose-Hoover thermostat parameters
+blank to use it. Charge and spin are only asked when the chosen calculator uses them
+(ORCA, UMA `omol`, MACE-POLAR and OrbMol-v2), and the Nose-Hoover thermostat parameters
 are behind an optional step so you can leave them at their defaults. The wizard
 exposes the same options as the flags, so nothing is reachable by flag alone.
 
@@ -189,6 +203,29 @@ ase-cli-tools md run --job nvt --calculator orb --variant orbmol_v2 \
 ase-cli-tools md run --job nvt --calculator grace --variant GRACE-2L-OMAT-large-ft-E \
     -s crystal.cif --cell "10 10 10" -T 300 -n 20000
 
+# single-point energy & forces (any calculator) -> writes singlepoint.extxyz
+ase-cli-tools sp run --calculator uma -c uma.pt -s mol.xyz --pbc false
+# energy only (cheaper; skips forces and stress)
+ase-cli-tools sp run --calculator uma -c uma.pt -s mol.xyz --pbc false --forces False
+
+# single-point with ORCA (QM): --orcasimpleinput is the "!" line, --nprocs sets
+# the %pal block, and --orcablock adds a "% ... end" block (repeat for several)
+ase-cli-tools sp run --calculator orca -s mol.xyz --pbc false \
+    --charge 0 --multiplicity 1 --nprocs 16 \
+    --orcasimpleinput "B3LYP def2-TZVP D3BJ TightSCF" \
+    --orcablock "%scf maxiter 300 end" --orcablock "%method integrationgrid 3 end"
+
+# ORCA can also drive MD (ab-initio MD): same ORCA flags on `md run`
+ase-cli-tools md run --job nvt --calculator orca -s mol.xyz --pbc false \
+    --orcasimpleinput "BP86 def2-SVP" --nprocs 16 -T 300 -n 500
+
+# geometry optimization (positions only): pick the algorithm and force threshold
+ase-cli-tools relax run --calculator uma -c uma.pt -s mol.xyz --pbc false \
+    --optimizer bfgs --fmax 0.05
+# LBFGS/FIRE and a tighter threshold; ORCA relaxation works too (adds EnGrad)
+ase-cli-tools relax run --calculator orca -s mol.xyz --pbc false \
+    --optimizer fire --fmax 0.02 --nprocs 16 --orcasimpleinput "B3LYP def2-SVP"
+
 # wrap post-processing
 ase-cli-tools postprocess wrap equil.traj
 
@@ -217,9 +254,9 @@ velocities). For NVT, `--thermostat` picks the thermostat:
 `--seed` sets the RNG seed for the initial Maxwell-Boltzmann velocities (default
 `42`) so a fresh-start run is reproducible.
 
-`--calculator` chooses the backend (`uma`, `mace`, `orb`, `grace`), with
+`--calculator` chooses the backend (`uma`, `mace`, `orb`, `grace`, `orca`), with
 `-c`/`--checkpoint` pointing at that backend's model file where one is needed
-(MACE and UMA need one; Orb and GRACE load weights by name, so no checkpoint).
+(MACE and UMA need one; Orb, GRACE and ORCA do not).
 Every backend is a family, and **`--variant` (`-t`) picks the family member** —
 its meaning depends on the calculator:
 
@@ -236,6 +273,12 @@ its meaning depends on the calculator:
 - **GRACE** — a foundation model: `GRACE-1L-OMAT-medium-ft-E` (default),
   `GRACE-1L-OMAT-large-ft-E`, `GRACE-2L-OMAT-medium-ft-E`,
   `GRACE-2L-OMAT-large-ft-E` or `GRACE-3L-OMAT-large` (runs on TensorFlow).
+- **ORCA** — the QM code; no variants. Configured by the ASE keywords
+  `--orcasimpleinput` (the `!` line, default `B3LYP def2-SVP`) and repeated
+  `--orcablock` (`% … end` blocks, joined with newlines). `--nprocs N` emits the
+  `%pal nprocs N end` block for you, `--charge`/`--multiplicity` go straight to
+  ORCA, and `--orca-command` sets the binary path. Add dispersion in
+  `--orcasimpleinput` (e.g. `D3BJ`), not via `--dispersion`.
 
 Omit `--variant` to take the calculator's default. `--precision` sets the
 floating-point precision for MACE (`float32`/`float64`, default `float64`) and
@@ -243,6 +286,14 @@ Orb (`float32-highest` — the recommended default — `float32-high` or `float6
 omit it to take the calculator's default. Each backend or variant is a small
 template plus one registry entry, so biasing, the thermostat and the output
 options work the same across all of them.
+
+The same calculator flags carry over to the other job types. `sp run` writes a
+single-point script (energy always; forces — and stress if periodic — unless
+`--forces False`, which is cheaper). `relax run` writes a geometry optimization:
+`--optimizer` picks `bfgs` (default), `lbfgs` or `fire`, `--fmax` sets the
+force-convergence threshold (default `0.05` eV/Å) and `--nsteps` caps the
+iterations; it relaxes atomic positions only (cell fixed) and writes the path to
+`opt.traj`, the step log to `opt.log` and the final structure to `optimized.xyz`.
 
 Command layout:
 
@@ -252,6 +303,12 @@ ase-cli-tools
 │   └── run          -> generate an MD script; --job selects the ensemble
 │                       (nvt, nve), --thermostat the NVT thermostat, --variant
 │                       the calculator member, --plumed biasing
+├── sp
+│   └── run          -> generate a single-point energy & forces script for any
+│                       calculator (ORCA is the natural QM backend)
+├── relax
+│   └── run          -> generate a geometry-optimization script; --optimizer
+│                       picks BFGS/LBFGS/FIRE, --fmax the force threshold
 └── postprocess
     └── wrap         -> generate a trajectory-wrapping script
 ```
@@ -266,7 +323,7 @@ Calculators:
 - [x] MACE
 - [x] Orb
 - [x] GRACE
-- [ ] ORCA
+- [x] ORCA
 - [ ] CP2K
 - [ ] Quantum ESPRESSO
 - [ ] VASP
@@ -275,6 +332,8 @@ Jobs / ensembles:
 
 - [x] NVT thermostats: Nose-Hoover chain, Langevin, CSVR (Bussi)
 - [x] NVE molecular dynamics
+- [x] Single-point energy & forces (any calculator)
+- [x] Geometry optimization (BFGS / LBFGS / FIRE; positions only)
 - [ ] NPT molecular dynamics and barostats
-- [ ] Single-point and frequency (vibrational) calculations
-- [ ] Geometry and cell relaxation
+- [ ] Frequency (vibrational) calculations
+- [ ] Cell relaxation (positions + cell, via ASE Filters)

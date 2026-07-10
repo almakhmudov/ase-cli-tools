@@ -1,0 +1,37 @@
+
+# --- geometry optimization --------------------------------------------------
+# Local, positions-only relaxation to a max-force threshold. (Cell shape and
+# volume are held fixed; relaxing the cell needs an ASE Filter -- a future
+# addition.) The optimizer streams a per-step table to LOG and the full path to
+# the trajectory TRAJ.
+from ase.optimize import $OPTIMIZER
+from ase.calculators.singlepoint import SinglePointCalculator
+
+for _out in (TRAJ, LOG, LAST_FRAME):
+    backup_if_exists(_out)
+
+dyn = $OPTIMIZER(atoms, logfile=LOG, trajectory=TRAJ)
+print(f"[relax] $OPTIMIZER: relaxing {len(atoms)} atoms to fmax < {FMAX} eV/A "
+      f"(<= {NSTEPS} steps); step log -> {LOG}", flush=True)
+_t0 = time.time()
+dyn.run(fmax=FMAX, steps=NSTEPS)
+_wall = time.time() - _t0
+
+energy = atoms.get_potential_energy()
+forces = atoms.get_forces()
+fmax_final = float(np.sqrt((forces ** 2).sum(axis=1).max()))
+converged = fmax_final <= FMAX
+nsteps_done = dyn.get_number_of_steps()
+status = "converged" if converged else "did NOT converge (hit step limit)"
+print(f"[relax] {status} in {nsteps_done} steps: fmax = {fmax_final:.4f} eV/A "
+      f"(target {FMAX}), E = {energy:.6f} eV  ({_wall:.1f} s)", flush=True)
+
+# --- final optimized structure (extended-xyz) -------------------------------
+out = atoms.copy()
+out.calc = SinglePointCalculator(out, energy=energy, forces=forces)
+write(LAST_FRAME, out, format="extxyz")
+print(f"[relax] wrote optimized structure -> {LAST_FRAME}", flush=True)
+
+# Signal non-convergence to the shell (outputs above are still written).
+if not converged:
+    raise SystemExit(1)

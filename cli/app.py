@@ -16,7 +16,7 @@ Categories
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 import typer
 
@@ -29,8 +29,12 @@ app = typer.Typer(
     help="Generate (and optionally run) reproducible ASE job scripts.",
 )
 md_app = typer.Typer(no_args_is_help=True, help="Molecular dynamics jobs.")
+sp_app = typer.Typer(no_args_is_help=True, help="Single-point calculations.")
+relax_app = typer.Typer(no_args_is_help=True, help="Geometry optimization.")
 post_app = typer.Typer(no_args_is_help=True, help="Post-processing tasks.")
 app.add_typer(md_app, name="md")
+app.add_typer(sp_app, name="sp")
+app.add_typer(relax_app, name="relax")
 app.add_typer(post_app, name="postprocess")
 
 
@@ -46,6 +50,7 @@ def _main(ctx: typer.Context):
 # --------------------------------------------------------------------------- #
 _CALCULATORS = list(registry.CALCULATORS)   # e.g. ["uma"], grows with the registry
 _THERMOSTATS = list(registry.THERMOSTATS)    # e.g. ["nose_hoover", "langevin", ...]
+_OPTIMIZERS = list(registry.OPTIMIZERS)      # ["bfgs", "lbfgs", "fire"]
 
 _TRUE = {"true", "t", "1", "yes", "y", "on"}
 _FALSE = {"false", "f", "0", "no", "n", "off"}
@@ -61,14 +66,13 @@ def _parse_bool(value: str, flag: str) -> bool:
     raise typer.BadParameter(f"{flag} expects True or False (got {value!r}).")
 
 
-def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
+def _check_calc(cfg: NVTConfig):
+    """Validate the calculator selection common to every job and warn about
+    options that do not apply to the chosen calculator/variant. Returns the
+    resolved component spec."""
     if cfg.calculator not in registry.CALCULATORS:
         raise typer.BadParameter(f"unknown calculator {cfg.calculator!r}; "
                                  f"choose from {_CALCULATORS}.")
-    if bool(cfg.structure) == bool(cfg.restart):
-        raise typer.BadParameter("provide exactly one of --structure or --restart.")
-
-    calc_spec = registry.CALCULATORS[cfg.calculator]
     try:
         _, comp = registry.resolve_variant(cfg.calculator, cfg.variant)
     except KeyError as exc:
@@ -89,12 +93,32 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
     # them.
     if (not registry.uses_charge_spin(cfg.calculator, cfg.variant)
             and (cfg.charge != 0 or cfg.multiplicity != 1)):
-        typer.secho("Note: --charge/--multiplicity are only used by UMA's 'omol' "
-                    "task, MACE-POLAR and OrbMol-v2; ignoring them here.",
+        typer.secho("Note: --charge/--multiplicity are only used by ORCA, UMA's "
+                    "'omol' task, MACE-POLAR and OrbMol-v2; ignoring them here.",
                     fg=typer.colors.YELLOW)
     if cfg.external_field and "EXTERNAL_FIELD" not in comp["params"]:
         typer.secho("Note: --external-field applies only to MACE-POLAR; "
                     "ignoring it here.", fg=typer.colors.YELLOW)
+
+    # ORCA-specific flags: warn when used with a non-ORCA calculator, and remind
+    # ORCA users that dispersion goes in --orcasimpleinput (e.g. 'D3BJ'), not the
+    # MLIP --dispersion flag.
+    is_orca = cfg.calculator == "orca"
+    if not is_orca and (cfg.orcablocks or cfg.nprocs or cfg.orca_command):
+        typer.secho("Note: --orcablock/--nprocs/--orca-command apply only to the "
+                    "ORCA calculator; ignoring them here.", fg=typer.colors.YELLOW)
+    if is_orca and cfg.dispersion:
+        typer.secho("Note: for ORCA, add dispersion to --orcasimpleinput (e.g. "
+                    "'B3LYP def2-SVP D3BJ'); --dispersion is ignored here.",
+                    fg=typer.colors.YELLOW)
+    return comp
+
+
+def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
+    if bool(cfg.structure) == bool(cfg.restart):
+        raise typer.BadParameter("provide exactly one of --structure or --restart.")
+
+    comp = _check_calc(cfg)
 
     # Validate --thermostat against the chosen job (thermostatted jobs only) and
     # warn when a coupling flag does not match the active thermostat.
@@ -119,6 +143,40 @@ def _emit_nvt(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
                         "thermostat; ignoring it here.", fg=typer.colors.YELLOW)
 
     text = generate.generate_md_script(cfg, script_name=output)
+    if to_stdout:
+        typer.echo(text)
+        return
+    path = generate.write_script(text, output)
+    typer.secho(f"Wrote {path}", fg=typer.colors.GREEN)
+    typer.echo(f"Run it with:  python {path}")
+    if run:
+        core.execute_script(path)
+
+
+def _emit_sp(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
+    if not cfg.structure:
+        raise typer.BadParameter("a --structure is required.")
+    _check_calc(cfg)
+    text = generate.generate_singlepoint_script(cfg, script_name=output)
+    if to_stdout:
+        typer.echo(text)
+        return
+    path = generate.write_script(text, output)
+    typer.secho(f"Wrote {path}", fg=typer.colors.GREEN)
+    typer.echo(f"Run it with:  python {path}")
+    if run:
+        core.execute_script(path)
+
+
+def _emit_relax(cfg: NVTConfig, output: str, to_stdout: bool, run: bool) -> None:
+    if not cfg.structure:
+        raise typer.BadParameter("a --structure is required.")
+    _check_calc(cfg)
+    try:
+        registry.resolve_optimizer(cfg.job, cfg.optimizer)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc))
+    text = generate.generate_relax_script(cfg, script_name=output)
     if to_stdout:
         typer.echo(text)
         return
@@ -163,6 +221,20 @@ def md_run(
     external_field: Optional[str] = typer.Option(None, "--external-field",
                                                  help="MACE-POLAR only: uniform "
                                                       "field 'Ex Ey Ez'."),
+    orcasimpleinput: str = typer.Option(
+        "B3LYP def2-SVP", "--orcasimpleinput",
+        help="ORCA only: the '!' line (method, basis, ...)."),
+    orcablock: Optional[List[str]] = typer.Option(
+        None, "--orcablock",
+        help="ORCA only: one '% ... end' block; repeat for several (joined with "
+             "newlines). The %pal block is added from --nprocs."),
+    nprocs: Optional[int] = typer.Option(
+        None, "--nprocs",
+        help="ORCA only: MPI cores, emitted as '%pal nprocs N end'."),
+    orca_command: Optional[str] = typer.Option(
+        None, "--orca-command",
+        help="ORCA only: full path to the orca binary (OrcaProfile). Omit to use "
+             "ASE's configfile / PATH."),
     structure: Optional[str] = typer.Option(None, "--structure", "-s",
                                             help="Starting structure or trajectory."),
     restart: Optional[str] = typer.Option(None, "--restart", "-r",
@@ -215,6 +287,9 @@ def md_run(
         job=job, precision=precision,
         dispersion=_parse_bool(dispersion, "--dispersion"),
         external_field=external_field,
+        orcasimpleinput=orcasimpleinput,
+        orcablocks="\n".join(orcablock) if orcablock else None,
+        nprocs=nprocs, orca_command=orca_command,
         structure=structure, restart=restart,
         cell=cell, pbc=pbc, charge=charge, multiplicity=multiplicity,
         temperature=temperature, timestep=timestep, nsteps=nsteps, seed=seed,
@@ -224,6 +299,134 @@ def md_run(
         plumed=plumed, prev_steps=prev_steps,
     )
     _emit_nvt(cfg, output or f"run_{job}.py", stdout, run)
+
+
+# --------------------------------------------------------------------------- #
+# Single-point calculations (flag-driven)
+# --------------------------------------------------------------------------- #
+@sp_app.command("run")
+def sp_run(
+    calculator: str = typer.Option("orca", "--calculator",
+                                   help=f"Backend: {_CALCULATORS} (ORCA is the "
+                                        "natural single-point calculator)."),
+    variant: Optional[str] = typer.Option(None, "--variant", "-t",
+                                          help=_VARIANT_HELP + ". Omit to use the "
+                                          "calculator's default."),
+    checkpoint: str = typer.Option(None, "--checkpoint", "-c",
+                                   help="Calculator model/checkpoint file (MLIPs)."),
+    precision: Optional[str] = typer.Option(
+        None, "--precision", help="MLIP precision (see 'md run --help')."),
+    dispersion: str = typer.Option("False", "--dispersion",
+                                   help="MACE-MP / Orb-v3 only: add D3 (True|False)."),
+    external_field: Optional[str] = typer.Option(None, "--external-field",
+                                                 help="MACE-POLAR only: 'Ex Ey Ez'."),
+    orcasimpleinput: str = typer.Option(
+        "B3LYP def2-SVP", "--orcasimpleinput",
+        help="ORCA only: the '!' line (method, basis, ...)."),
+    orcablock: Optional[List[str]] = typer.Option(
+        None, "--orcablock",
+        help="ORCA only: one '% ... end' block; repeat for several."),
+    nprocs: Optional[int] = typer.Option(
+        None, "--nprocs", help="ORCA only: MPI cores ('%pal nprocs N end')."),
+    orca_command: Optional[str] = typer.Option(
+        None, "--orca-command", help="ORCA only: full path to the orca binary."),
+    structure: str = typer.Option(None, "--structure", "-s",
+                                  help="Structure to evaluate."),
+    cell: Optional[str] = typer.Option(None, help='Cell, e.g. "20 20 20".'),
+    pbc: str = typer.Option("true", help="Periodicity (true/false or 'T T F')."),
+    charge: int = typer.Option(0, help="Total charge."),
+    multiplicity: int = typer.Option(1, help="Spin multiplicity (2S+1)."),
+    device: str = typer.Option("auto", help="Device for MLIP backends."),
+    forces: str = typer.Option(
+        "True", "--forces",
+        help="Compute forces, and stress if periodic (True | False). False is a "
+             "cheaper energy-only run."),
+    sp_output: str = typer.Option("singlepoint.extxyz", "--sp-output",
+                                  help="Results file (extended-xyz)."),
+    output: Optional[str] = typer.Option(None, "--output", "-o",
+                                         help="Script filename (default: run_sp.py)."),
+    stdout: bool = typer.Option(False, "--stdout", help="Print the script instead of writing it."),
+    run: bool = typer.Option(False, "--run", help="Run the generated script after writing."),
+):
+    """Generate a single-point energy/forces script for any calculator."""
+    cfg = NVTConfig(
+        checkpoint=checkpoint, calculator=calculator, variant=variant,
+        job="singlepoint", precision=precision,
+        dispersion=_parse_bool(dispersion, "--dispersion"),
+        external_field=external_field,
+        orcasimpleinput=orcasimpleinput,
+        orcablocks="\n".join(orcablock) if orcablock else None,
+        nprocs=nprocs, orca_command=orca_command,
+        structure=structure, cell=cell, pbc=pbc,
+        charge=charge, multiplicity=multiplicity, device=device,
+        sp_forces=_parse_bool(forces, "--forces"), sp_output=sp_output,
+    )
+    _emit_sp(cfg, output or "run_sp.py", stdout, run)
+
+
+# --------------------------------------------------------------------------- #
+# Geometry optimization (flag-driven)
+# --------------------------------------------------------------------------- #
+@relax_app.command("run")
+def relax_run(
+    calculator: str = typer.Option("uma", "--calculator",
+                                   help=f"Backend: {_CALCULATORS}."),
+    variant: Optional[str] = typer.Option(None, "--variant", "-t",
+                                          help=_VARIANT_HELP + ". Omit to use the "
+                                          "calculator's default."),
+    checkpoint: str = typer.Option(None, "--checkpoint", "-c",
+                                   help="Calculator model/checkpoint file (MLIPs)."),
+    precision: Optional[str] = typer.Option(
+        None, "--precision", help="MLIP precision (see 'md run --help')."),
+    dispersion: str = typer.Option("False", "--dispersion",
+                                   help="MACE-MP / Orb-v3 only: add D3 (True|False)."),
+    external_field: Optional[str] = typer.Option(None, "--external-field",
+                                                 help="MACE-POLAR only: 'Ex Ey Ez'."),
+    orcasimpleinput: str = typer.Option(
+        "B3LYP def2-SVP", "--orcasimpleinput",
+        help="ORCA only: the '!' line (method, basis, ...)."),
+    orcablock: Optional[List[str]] = typer.Option(
+        None, "--orcablock",
+        help="ORCA only: one '% ... end' block; repeat for several."),
+    nprocs: Optional[int] = typer.Option(
+        None, "--nprocs", help="ORCA only: MPI cores ('%pal nprocs N end')."),
+    orca_command: Optional[str] = typer.Option(
+        None, "--orca-command", help="ORCA only: full path to the orca binary."),
+    structure: str = typer.Option(None, "--structure", "-s",
+                                  help="Structure to relax."),
+    cell: Optional[str] = typer.Option(None, help='Cell, e.g. "20 20 20".'),
+    pbc: str = typer.Option("true", help="Periodicity (true/false or 'T T F')."),
+    charge: int = typer.Option(0, help="Total charge."),
+    multiplicity: int = typer.Option(1, help="Spin multiplicity (2S+1)."),
+    device: str = typer.Option("auto", help="Device for MLIP backends."),
+    optimizer: Optional[str] = typer.Option(
+        None, "--optimizer", "-a",
+        help=f"Algorithm: {_OPTIMIZERS} (default bfgs)."),
+    fmax: float = typer.Option(
+        0.05, "--fmax",
+        help="Converge until the max force on any atom is below this (eV/A)."),
+    nsteps: int = typer.Option(500, "--nsteps", "-n",
+                               help="Maximum optimizer steps."),
+    output: Optional[str] = typer.Option(None, "--output", "-o",
+                                         help="Script filename (default: run_relax.py)."),
+    stdout: bool = typer.Option(False, "--stdout", help="Print the script instead of writing it."),
+    run: bool = typer.Option(False, "--run", help="Run the generated script after writing."),
+):
+    """Generate a geometry-optimization script (positions only) for any calculator."""
+    cfg = NVTConfig(
+        checkpoint=checkpoint, calculator=calculator, variant=variant,
+        job="relax", precision=precision,
+        dispersion=_parse_bool(dispersion, "--dispersion"),
+        external_field=external_field,
+        orcasimpleinput=orcasimpleinput,
+        orcablocks="\n".join(orcablock) if orcablock else None,
+        nprocs=nprocs, orca_command=orca_command,
+        structure=structure, cell=cell, pbc=pbc,
+        charge=charge, multiplicity=multiplicity, device=device,
+        optimizer=optimizer, fmax=fmax, nsteps=nsteps,
+        traj="opt", log="opt.log", last_frame="optimized.xyz",
+    )
+    _emit_relax(cfg, output or "run_relax.py", stdout, run)
 
 
 # --------------------------------------------------------------------------- #

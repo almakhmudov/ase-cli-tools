@@ -1,0 +1,38 @@
+
+# --- single-point calculation -----------------------------------------------
+from ase.calculators.singlepoint import SinglePointCalculator
+
+_t0 = time.time()
+energy = atoms.get_potential_energy()
+_wall = time.time() - _t0
+print(f"[sp] potential energy = {energy:.6f} eV  ({_wall:.1f} s)", flush=True)
+
+results = {"energy": energy}
+if SP_FORCES:
+    try:
+        forces = atoms.get_forces()
+        results["forces"] = forces
+        fmax = float(np.sqrt((forces ** 2).sum(axis=1).max()))
+        print(f"[sp] max |force| = {fmax:.6f} eV/A over {len(atoms)} atoms",
+              flush=True)
+    except Exception as exc:                   # not every calculator has forces
+        print(f"[sp] forces unavailable: {exc}", flush=True)
+    if periodic:
+        try:
+            stress = atoms.get_stress()
+            results["stress"] = stress
+            print(f"[sp] stress (Voigt, eV/A^3) = "
+                  f"{np.array2string(stress, precision=6)}", flush=True)
+        except Exception as exc:
+            print(f"[sp] stress unavailable: {exc}", flush=True)
+else:
+    print("[sp] energy only (forces not requested)", flush=True)
+
+# --- write results ----------------------------------------------------------
+# Store the computed properties on a detached copy so the values are frozen into
+# the file (extended-xyz, readable straight back with ase.io.read).
+backup_if_exists(SP_OUTPUT)
+out = atoms.copy()
+out.calc = SinglePointCalculator(out, **results)
+write(SP_OUTPUT, out, format="extxyz")
+print(f"[sp] wrote results -> {SP_OUTPUT}", flush=True)
