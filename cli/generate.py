@@ -301,7 +301,7 @@ def generate_md_script(cfg: NVTConfig, script_name: str = "run_md.py") -> str:
         values["PRECISION"] = repr(cfg.precision or pspec["default"])
 
     # Charge/spin. A variant that uses them may either bake the atoms.info lines
-    # into its own skeleton (MACE-POLAR, OrbMol-v2) or rely on the $CHARGE_SPIN
+    # into its own skeleton (MACE-POLAR, Orb-v3-omol) or rely on the $CHARGE_SPIN
     # placeholder (UMA). We always compute the block and hand it to
     # safe_substitute; skeletons without the placeholder simply ignore it.
     uses_cs = bool(comp.get("uses_charge_spin"))

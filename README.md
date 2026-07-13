@@ -151,7 +151,7 @@ model) and, where it applies, the precision from menus, then type the remaining
 parameters — periodicity, cell, temperature, timestep, steps, recording interval
 and so on. Every typed prompt shows its default in parentheses and accepts a
 blank to use it. Charge and spin are only asked when the chosen calculator uses them
-(ORCA, UMA `omol`, MACE-POLAR and OrbMol-v2), and the Nose-Hoover thermostat parameters
+(ORCA, UMA `omol`, MACE-POLAR and Orb-v3-omol), and the Nose-Hoover thermostat parameters
 are behind an optional step so you can leave them at their defaults. The wizard
 exposes the same options as the flags, so nothing is reachable by flag alone.
 
@@ -203,12 +203,12 @@ ase-cli-tools md run --job nvt --calculator mace --variant mace_polar -c polar.m
     -s mixture.xyz --cell "20 20 20" --charge 0 --multiplicity 1 \
     --external-field "0 0 0.01" -T 298.15 -n 10000
 
-# Orb (no checkpoint file needed): default variant orb_v3_omat, D3 optional
+# Orb (no checkpoint file needed): default variant orb_v3_omat
 ase-cli-tools md run --job nvt --calculator orb -s crystal.cif --cell "10 10 10" \
-    --precision float32-highest --dispersion True -T 300 -n 20000
+    --precision float32-highest -T 300 -n 20000
 
-# OrbMol-v2: uses charge/spin (like MACE-POLAR / UMA omol)
-ase-cli-tools md run --job nvt --calculator orb --variant orbmol_v2 \
+# Orb-v3-omol: molecular model, uses charge/spin (like MACE-POLAR / UMA omol)
+ase-cli-tools md run --job nvt --calculator orb --variant orb_v3_omol \
     -s molecule.xyz --charge 0 --multiplicity 1 --precision float32-high -T 298.15 -n 10000
 
 # GRACE (no checkpoint file needed): pick a foundation model with --variant
@@ -296,9 +296,10 @@ its meaning depends on the calculator:
 - **MACE** — `mace_mp` (materials, the default; `--dispersion True` adds a D3
   correction), `mace_off` (organic molecules) or `mace_polar` (uses
   `--charge`/`--multiplicity` and an optional `--external-field "Ex Ey Ez"`).
-- **Orb** — `orb_v3_omat` (Orb-v3-conservative-inf-omat, the default;
-  `--dispersion True` adds a D3 correction) or `orbmol_v2` (uses
-  `--charge`/`--multiplicity`).
+- **Orb** — `orb_v3_omat` (Orb-v3-conservative-inf-omat, the default; materials)
+  or `orb_v3_omol` (Orb-v3-conservative-omol; molecules, uses
+  `--charge`/`--multiplicity`). Both load weights by name (no checkpoint file)
+  and need `orb-models >= 0.5`.
 - **GRACE** — a foundation model: `GRACE-1L-OMAT-medium-ft-E` (default),
   `GRACE-1L-OMAT-large-ft-E`, `GRACE-2L-OMAT-medium-ft-E`,
   `GRACE-2L-OMAT-large-ft-E` or `GRACE-3L-OMAT-large` (runs on TensorFlow).

@@ -37,7 +37,7 @@ class JobConfig:
     # Floating-point precision for MACE (default_dtype) and Orb (precision).
     # None -> use the calculator/variant default from the registry.
     precision: Optional[str] = None
-    dispersion: bool = False         # MACE-MP / Orb-v3: D3 dispersion correction
+    dispersion: bool = False         # MACE-MP only: D3 dispersion correction
     external_field: Optional[str] = None  # MACE-POLAR: "Ex Ey Ez" (optional)
     device: str = "auto"
 

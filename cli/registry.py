@@ -112,17 +112,17 @@ CALCULATORS = {
         "variants": {
             "orb_v3_omat": {
                 "label": "Orb-v3-conservative-inf-omat",
-                "desc": "materials foundation model; optional D3 dispersion",
+                "desc": "materials foundation model",
                 "template": "calculators/orb/v3_omat.py.tmpl",
-                "params": ["PRECISION", "DISPERSION"],
+                "params": ["PRECISION"],
                 "precision": {"default": "float32-highest",
                               "choices": ["float32-highest", "float32-high",
                                           "float64"]},
             },
-            "orbmol_v2": {
-                "label": "OrbMol-v2",
+            "orb_v3_omol": {
+                "label": "Orb-v3-conservative-omol",
                 "desc": "molecules; uses charge & spin",
-                "template": "calculators/orb/orbmol_v2.py.tmpl",
+                "template": "calculators/orb/v3_omol.py.tmpl",
                 "params": ["PRECISION", "CHARGE", "MULTIPLICITY"],
                 "precision": {"default": "float32-highest",
                               "choices": ["float32-highest", "float32-high",
@@ -205,7 +205,7 @@ def uses_charge_spin(calculator: str, variant: "str | None" = None) -> bool:
     """Whether the chosen variant reads the system's charge & spin.
 
     True for any variant flagged ``uses_charge_spin`` (UMA 'omol', MACE-POLAR,
-    OrbMol-v2)."""
+    Orb-v3-omol)."""
     _, comp = resolve_variant(calculator, variant)
     return bool(comp.get("uses_charge_spin"))
 

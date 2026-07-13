@@ -1,15 +1,7 @@
 
 # --- calculator: Orb-v3-conservative-inf-omat -------------------------------
 from orb_models.forcefield import pretrained
-from orb_models.forcefield.inference.calculator import ORBCalculator
+from orb_models.forcefield.calculator import ORBCalculator
 
-orbff, atoms_adapter = pretrained.orb_v3_conservative_inf_omat(
-    device=device,
-    precision=PRECISION,
-)
-if DISPERSION:
-    # Optional D3 dispersion correction (PBE / Becke-Johnson damping).
-    from orb_models.forcefield.inference.d3_model import D3SumModel, AlchemiDFTD3
-    orbff = D3SumModel(orbff, AlchemiDFTD3(functional="PBE", damping="BJ",
-                                           compile=True))
-base_calc = ORBCalculator(orbff, atoms_adapter=atoms_adapter, device=device)
+orbff = pretrained.orb_v3_conservative_inf_omat(device=device, precision=PRECISION)
+base_calc = ORBCalculator(orbff, device=device)

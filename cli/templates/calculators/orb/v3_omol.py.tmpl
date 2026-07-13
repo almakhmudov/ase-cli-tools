@@ -1,0 +1,13 @@
+
+# --- calculator: Orb-v3-conservative-omol -----------------------------------
+from orb_models.forcefield import pretrained
+from orb_models.forcefield.calculator import ORBCalculator
+
+# The omol model uses the system's total charge and spin multiplicity, read from
+# atoms.info (spin = the multiplicity, 2S+1), as with MACE-POLAR and UMA's omol
+# task. The pretrained loader downloads the weights by name on first use.
+atoms.info["charge"] = CHARGE
+atoms.info["spin"] = MULTIPLICITY
+
+orbff = pretrained.orb_v3_conservative_omol(device=device, precision=PRECISION)
+base_calc = ORBCalculator(orbff, device=device)

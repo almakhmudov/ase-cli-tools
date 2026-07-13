@@ -104,11 +104,18 @@ def _check_calc(cfg: NVTConfig):
     if (not registry.uses_charge_spin(cfg.calculator, cfg.variant)
             and (cfg.charge != 0 or cfg.multiplicity != 1)):
         typer.secho("Note: --charge/--multiplicity are only used by ORCA, Quantum "
-                    "ESPRESSO, UMA's 'omol' task, MACE-POLAR and OrbMol-v2; "
+                    "ESPRESSO, UMA's 'omol' task, MACE-POLAR and Orb-v3-omol; "
                     "ignoring them here.", fg=typer.colors.YELLOW)
     if cfg.external_field and "EXTERNAL_FIELD" not in comp["params"]:
         typer.secho("Note: --external-field applies only to MACE-POLAR; "
                     "ignoring it here.", fg=typer.colors.YELLOW)
+
+    # Dispersion applies only to variants that expose it (MACE-MP). ORCA gets its
+    # own dedicated note below, so skip it here.
+    if (cfg.dispersion and cfg.calculator != "orca"
+            and "DISPERSION" not in comp["params"]):
+        typer.secho("Note: --dispersion applies only to MACE-MP; ignoring it "
+                    "here.", fg=typer.colors.YELLOW)
 
     # External-code executable, shared by ORCA and Quantum ESPRESSO.
     if cfg.command and "COMMAND" not in comp["params"]:
@@ -253,7 +260,7 @@ def md_run(
              "float64). Orb: float32-highest | float32-high | float64 (default "
              "float32-highest). Omit to use the calculator's default."),
     dispersion: str = typer.Option("False", "--dispersion",
-                                   help="MACE-MP / Orb-v3 only: add D3 dispersion "
+                                   help="MACE-MP only: add D3 dispersion "
                                         "(True | False)."),
     external_field: Optional[str] = typer.Option(None, "--external-field",
                                                  help="MACE-POLAR only: uniform "
@@ -372,7 +379,7 @@ def sp_run(
     precision: Optional[str] = typer.Option(
         None, "--precision", help="MLIP precision (see 'md run --help')."),
     dispersion: str = typer.Option("False", "--dispersion",
-                                   help="MACE-MP / Orb-v3 only: add D3 (True|False)."),
+                                   help="MACE-MP only: add D3 (True|False)."),
     external_field: Optional[str] = typer.Option(None, "--external-field",
                                                  help="MACE-POLAR only: 'Ex Ey Ez'."),
     orcasimpleinput: str = typer.Option(
@@ -451,7 +458,7 @@ def relax_run(
     precision: Optional[str] = typer.Option(
         None, "--precision", help="MLIP precision (see 'md run --help')."),
     dispersion: str = typer.Option("False", "--dispersion",
-                                   help="MACE-MP / Orb-v3 only: add D3 (True|False)."),
+                                   help="MACE-MP only: add D3 (True|False)."),
     external_field: Optional[str] = typer.Option(None, "--external-field",
                                                  help="MACE-POLAR only: 'Ex Ey Ez'."),
     orcasimpleinput: str = typer.Option(
