@@ -54,8 +54,8 @@ jobs:
             -c mace.model -s in.xyz --cell "20 20 20" --precision float32 \
             --dispersion True --traj-format xyz --wrap --stdout > /tmp/mace.py
           python -m cli.app md run --job nvt --calculator orb --variant orb_v3_omat \
-            -s in.xyz --cell "20 20 20" --dispersion True --stdout > /tmp/orb.py
-          python -m cli.app md run --job nvt --calculator orb --variant orbmol_v2 \
+            -s in.xyz --cell "20 20 20" --stdout > /tmp/orb.py
+          python -m cli.app md run --job nvt --calculator orb --variant orb_v3_omol \
             -s mol.xyz --charge 0 --multiplicity 1 --precision float32-high \
             --stdout > /tmp/orbmol.py
           python -m cli.app md run --job nvt --calculator grace \
