@@ -380,3 +380,11 @@ Jobs / ensembles:
 - [ ] NPT molecular dynamics and barostats
 - [ ] Frequency (vibrational) calculations
 - [ ] Cell relaxation (positions + cell, via ASE Filters)
+
+Tools / commands:
+
+- [ ] `build` — create starting systems from within the CLI (molecules from
+  SMILES/name, bulk crystals, surfaces/slabs, supercells, solvated/packed
+  boxes), writing a structure file the other commands consume
+- [ ] `workflows` — chain jobs into a single reproducible pipeline (e.g. build →
+  relax → MD → post-process), so multi-step studies are one artifact
