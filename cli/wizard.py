@@ -198,7 +198,10 @@ def _thermostat_is(s, name):
 # choice builders (depend on earlier answers)
 # --------------------------------------------------------------------------- #
 def _calc_pairs(_s):
-    return [(spec["label"], name) for name, spec in registry.CALCULATORS.items()]
+    # Show the bare calculator name in the menu, dropping the parenthetical tag
+    # ("UMA (FairChem)" -> "UMA", "Quantum ESPRESSO (QM)" -> "Quantum ESPRESSO").
+    return [(spec["label"].split(" (")[0], name)
+            for name, spec in registry.CALCULATORS.items()]
 
 
 def _variant_pairs(s):
@@ -415,11 +418,11 @@ def _build_steps() -> List[Step]:
              "Pseudopotential directory (blank = ASE config)",
              applies=_is_espresso, default=None, label="Pseudo dir"),
         Step("ecutwfc", "text",
-             "Plane-wave cutoff ecutwfc (Ry) — required",
-             applies=_is_espresso, default=None, cast=float, label="ecutwfc (Ry)"),
+             "Plane-wave cutoff ecutwfc (Ry)",
+             applies=_is_espresso, default=60, cast=float, label="ecutwfc (Ry)"),
         Step("ecutrho", "text",
-             "Charge-density cutoff ecutrho (Ry) (blank = QE default)",
-             applies=_is_espresso, default=None, cast=float, label="ecutrho (Ry)"),
+             "Charge-density cutoff ecutrho (Ry)",
+             applies=_is_espresso, default=480, cast=float, label="ecutrho (Ry)"),
         Step("kpts", "text",
              "k-point grid 'k1 k2 k3' (blank = Gamma only)",
              applies=_is_espresso, default=None, label="k-points"),
@@ -430,7 +433,7 @@ def _build_steps() -> List[Step]:
 
         # --- external codes: the executable ---------------------------------
         Step("command", "text",
-             "Executable (e.g. /path/to/orca or 'mpiexec -n 16 .../pw.x'; "
+             "Executable (e.g. /path/to/pw.x or 'mpiexec -n 16 .../pw.x'; "
              "blank = ASE config / PATH)",
              applies=_needs_command, default=None, label="Executable command"),
 
