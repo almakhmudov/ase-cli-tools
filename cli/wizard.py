@@ -433,8 +433,8 @@ def _build_steps() -> List[Step]:
 
         # --- external codes: the executable ---------------------------------
         Step("command", "text",
-             "Executable (e.g. /path/to/pw.x or 'mpiexec -n 16 .../pw.x'; "
-             "blank = ASE config / PATH)",
+             "Executable (e.g. /path/to/executable or "
+             "'mpiexec -n 16 .../executable'; blank = ASE config / PATH)",
              applies=_needs_command, default=None, label="Executable command"),
 
         # --- structure ------------------------------------------------------
@@ -480,7 +480,7 @@ def _build_steps() -> List[Step]:
              lambda s: ("Maximum optimizer steps" if _is_relax(s)
                         else "Number of steps"),
              applies=lambda s: _is_md(s) or _is_relax(s),
-             default=lambda s: 500 if _is_relax(s) else 10000, cast=int,
+             default=lambda s: 200 if _is_relax(s) else 10000, cast=int,
              label="Number of steps"),
         Step("seed", "text", "RNG seed for the initial velocities",
              applies=_is_md, default=42, cast=int, label="RNG seed"),

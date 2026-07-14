@@ -498,7 +498,7 @@ def relax_run(
     fmax: float = typer.Option(
         0.05, "--fmax",
         help="Converge until the max force on any atom is below this (eV/A)."),
-    nsteps: int = typer.Option(500, "--nsteps", "-n",
+    nsteps: int = typer.Option(200, "--nsteps", "-n",
                                help="Maximum optimizer steps."),
     output: Optional[str] = typer.Option(None, "--output", "-o",
                                          help="Script filename (default: run_relax.py)."),
